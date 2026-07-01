@@ -49,7 +49,9 @@
       (str fallback "-" (inc idx))))
 
 (defn xfrm [block]
-  (let [body (or (second (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or block ""))) "")
+  (let [body (or (second (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or block "")))
+                 (second (re-find #"<p:xfrm\b[^>]*>([\s\S]*?)</p:xfrm>" (or block "")))
+                 "")
         off (or (re-find #"<a:off\b[^>]*>" body) "")
         ext (or (re-find #"<a:ext\b[^>]*>" body) "")]
     {:drawingml/x (emu->inch (xml-attr off "x") 0.8)
@@ -120,6 +122,20 @@
               :drawingml/color "17202A"}
              (xfrm block)))))
 
+(defn chart-shape [idx block]
+  (when (re-find #"<c:chart\b" (or block ""))
+    (merge {:drawingml/id (shape-name block idx "chart")
+            :drawingml/kind :chart
+            :drawingml/text (shape-name block idx "Chart")
+            :drawingml/source-kind :drawingml/chart
+            :drawingml/font-size 12
+            :drawingml/color "334155"}
+           (xfrm block))))
+
+(defn graphic-frame-shape [idx block]
+  (or (table-shape idx block)
+      (chart-shape idx block)))
+
 (defn fallback-text-shapes [texts]
   (vec
    (map-indexed
@@ -142,8 +158,9 @@
                                                (rect-shape shape-idx block)))
                                          shape-blocks))
         pics (vec (map-indexed pic-shape (xml-elements xml "p:pic")))
-        tables (vec (keep-indexed table-shape (xml-elements xml "a:tbl")))
-        parsed (vec (concat parsed-shapes pics tables))]
+        graphic-frames (vec (keep-indexed graphic-frame-shape (xml-elements xml "p:graphicFrame")))
+        standalone-tables (vec (keep-indexed table-shape (xml-elements xml "a:tbl")))
+        parsed (vec (concat parsed-shapes pics graphic-frames standalone-tables))]
     (if (seq parsed)
       parsed
       (let [texts (vec (xml-texts xml "a:t"))]
@@ -153,5 +170,5 @@
 
 (defn valid-shape? [shape]
   (and (map? shape)
-       (contains? #{:text :rect :pic :table} (:drawingml/kind shape))
+       (contains? #{:text :rect :pic :table :chart} (:drawingml/kind shape))
        (string? (:drawingml/id shape))))

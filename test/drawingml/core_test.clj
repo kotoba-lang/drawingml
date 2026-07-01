@@ -98,6 +98,8 @@
   (is (= :pic (:drawingml/kind (parse/pic-shape 0 "<p:pic><p:cNvPr name=\"Photo\"/></p:pic>"))))
   (is (nil? (parse/table-shape 0 "<a:tbl/>")))
   (is (= :table (:drawingml/kind (parse/table-shape 0 "<a:tbl><a:t>A</a:t><a:t>B</a:t></a:tbl>"))))
+  (is (= :chart (:drawingml/kind (parse/chart-shape 0 "<p:graphicFrame><c:chart r:id=\"rId1\"/></p:graphicFrame>"))))
+  (is (nil? (parse/chart-shape 0 "<p:graphicFrame/>")))
   (is (= ["text-1" "text-2"] (mapv :drawingml/id (parse/fallback-text-shapes ["A" "B"]))))
   (is (= [] (parse/shapes "<p:sld/>")))
   (is (= ["text-1"] (mapv :drawingml/id (parse/shapes "<p:sld><a:t>Loose</a:t></p:sld>"))))
@@ -109,13 +111,21 @@
   (let [multi-text "<p:sp><p:nvSpPr><p:cNvPr name=\"Multi\"/></p:nvSpPr><p:txBody><a:p><a:r><a:t>A</a:t></a:r><a:r><a:t>B</a:t></a:r></a:p></p:txBody></p:sp>"
         text-without-fill "<p:sp><p:nvSpPr><p:cNvPr name=\"Plain\"/></p:nvSpPr><p:txBody><a:p><a:r><a:t>Plain</a:t></a:r></a:p></p:txBody></p:sp>"
         rect-without-fill "<p:sp><p:nvSpPr><p:cNvPr name=\"Plain rect\"/></p:nvSpPr><p:spPr><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:sp>"
+        chart-frame "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr name=\"Sales Chart\"/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"2743200\" cy=\"1371600\"/></p:xfrm><a:graphic><a:graphicData><c:chart r:id=\"rId1\"/></a:graphicData></a:graphic></p:graphicFrame>"
         parsed-multi (parse/text-shape 0 multi-text)
         parsed-plain (parse/text-shape 0 text-without-fill)
-        parsed-rect (parse/rect-shape 0 rect-without-fill)]
+        parsed-rect (parse/rect-shape 0 rect-without-fill)
+        parsed-chart (parse/graphic-frame-shape 0 chart-frame)]
     (is (= :drawingml/text-runs (:drawingml/source-kind parsed-multi)))
     (is (= "17202A" (:drawingml/color parsed-plain)))
     (is (= "EAF0F8" (:drawingml/fill parsed-rect)))
     (is (nil? (:drawingml/line parsed-rect)))
+    (is (= :chart (:drawingml/kind parsed-chart)))
+    (is (= "Sales Chart" (:drawingml/id parsed-chart)))
+    (is (= 1.0 (:drawingml/x parsed-chart)))
+    (is (= 2.0 (:drawingml/y parsed-chart)))
+    (is (= 3.0 (:drawingml/w parsed-chart)))
+    (is (= 1.5 (:drawingml/h parsed-chart)))
     (is (= "pic-1" (:drawingml/id (parse/pic-shape 0 "<p:pic/>"))))
     (is (= "A\nB" (:drawingml/text (parse/table-shape 0 "<a:tbl><a:t>A</a:t><a:t>B</a:t></a:tbl>"))))
     (is (= "334155" (:drawingml/color (parse/pic-shape 0 "<p:pic/>"))))
