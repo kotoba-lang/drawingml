@@ -93,3 +93,15 @@
 
 (defn table-row [height cells]
   (el :a:tr {:h (emu height)} cells))
+
+(defn valid-node? [node]
+  (cond
+    (nil? node) true
+    (string? node) true
+    (number? node) true
+    (sequential? node) (every? valid-node? node)
+    (map? node) (and (:tag node)
+                     (map? (:attrs node))
+                     (sequential? (:children node))
+                     (every? valid-node? (:children node)))
+    :else false))
