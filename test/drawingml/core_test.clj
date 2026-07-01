@@ -135,3 +135,28 @@
     (is (= "334155" (:drawingml/color (parse/pic-shape 0 "<p:pic/>"))))
     (is (= 12 (:drawingml/font-size (parse/pic-shape 0 "<p:pic/>"))))
     (is (= 14 (:drawingml/font-size (parse/table-shape 0 "<a:tbl><a:t>A</a:t></a:tbl>"))))))
+
+(deftest preserves-ooxml-authoring-semantics
+  (let [xml (str "<p:sld><p:cSld><p:spTree>"
+                 "<p:grpSp><p:nvGrpSpPr><p:cNvPr id=\"8\" name=\"Group 1\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>"
+                 "<p:grpSpPr><a:xfrm/></p:grpSpPr>"
+                 "<p:sp><p:nvSpPr><p:cNvPr id=\"9\" name=\"Grouped Title\"/><p:cNvSpPr/><p:nvPr><p:ph type=\"title\" idx=\"1\"/></p:nvPr></p:nvSpPr>"
+                 "<p:txBody><a:p><a:r><a:t>Inside group</a:t></a:r></a:p></p:txBody></p:sp>"
+                 "</p:grpSp>"
+                 "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"12\" name=\"Revenue Chart\"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>"
+                 "<a:graphic><a:graphicData><c:chart r:id=\"rId2\"/></a:graphicData></a:graphic></p:graphicFrame>"
+                 "</p:spTree></p:cSld></p:sld>")
+        parsed (parse/shapes xml {:part "ppt/slides/slide1.xml"
+                                  :rels {"rId2" {:target-path "ppt/charts/chart1.xml"
+                                                  :workbook-path "ppt/embeddings/book1.xlsx"}}})
+        grouped (first parsed)
+        chart (second parsed)]
+    (is (= {:type "title" :idx "1"} (:drawingml/placeholder grouped)))
+    (is (= {:index 0 :id "Group 1"} (:drawingml/group grouped)))
+    (is (= {:type "title" :idx "1"} (get-in grouped [:ooxml/source :ooxml/placeholder])))
+    (is (= {:index 0 :id "Group 1"} (get-in grouped [:ooxml/source :ooxml/group])))
+    (is (= "rId2" (:drawingml/chart-rel-id chart)))
+    (is (= "ppt/charts/chart1.xml" (:drawingml/chart-part chart)))
+    (is (= "ppt/embeddings/book1.xlsx" (:drawingml/workbook-part chart)))
+    (is (= "ppt/charts/chart1.xml" (get-in chart [:ooxml/source :ooxml/chart-part])))
+    (is (= "ppt/embeddings/book1.xlsx" (get-in chart [:ooxml/source :ooxml/workbook-part])))))

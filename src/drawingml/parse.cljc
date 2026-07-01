@@ -48,12 +48,45 @@
   (or (xml-attr (or (re-find #"<p:cNvPr\b[^>]*>" (or block "")) "") "name")
       (str fallback "-" (inc idx))))
 
+(defn placeholder [block]
+  (when-let [ph (re-find #"<p:ph\b[^>]*/?>" (or block ""))]
+    (cond-> {}
+      (xml-attr ph "type") (assoc :type (xml-attr ph "type"))
+      (xml-attr ph "idx") (assoc :idx (xml-attr ph "idx"))
+      (xml-attr ph "sz") (assoc :size (xml-attr ph "sz"))
+      (xml-attr ph "orient") (assoc :orient (xml-attr ph "orient")))))
+
+(defn- add-placeholder [shape block]
+  (cond-> shape
+    (placeholder block) (assoc :drawingml/placeholder (placeholder block))))
+
+(defn- group-metadata [groups block]
+  (some (fn [[idx group-block]]
+          (when (and (not= group-block block)
+                     (str/includes? group-block block))
+            {:index idx
+             :id (shape-name group-block idx "group")}))
+        (map-indexed vector groups)))
+
+(defn- add-group [shape group]
+  (cond-> shape
+    group (assoc :drawingml/group group)))
+
+(defn- source-extras [shape]
+  (cond-> {}
+    (:drawingml/group shape) (assoc :ooxml/group (:drawingml/group shape))
+    (:drawingml/placeholder shape) (assoc :ooxml/placeholder (:drawingml/placeholder shape))
+    (:drawingml/chart-rel-id shape) (assoc :ooxml/chart-rel-id (:drawingml/chart-rel-id shape))
+    (:drawingml/chart-part shape) (assoc :ooxml/chart-part (:drawingml/chart-part shape))
+    (:drawingml/workbook-part shape) (assoc :ooxml/workbook-part (:drawingml/workbook-part shape))))
+
 (defn- with-source [shape opts kind idx]
   (cond-> shape
     (:part opts)
-    (assoc :ooxml/source (cond-> {:ooxml/part (:part opts)
-                                  :ooxml/kind kind
-                                  :ooxml/index idx}
+    (assoc :ooxml/source (cond-> (merge {:ooxml/part (:part opts)
+                                         :ooxml/kind kind
+                                         :ooxml/index idx}
+                                        (source-extras shape))
                            (:source opts) (assoc :ooxml/source (:source opts))))))
 
 (defn xfrm [block]
@@ -94,20 +127,24 @@
   (let [texts (vec (xml-texts block "a:t"))
         text (str/join "\n" texts)]
     (when-not (str/blank? text)
-      (cond-> (merge {:drawingml/id (shape-name block idx "text")
-                      :drawingml/kind :text
-                      :drawingml/text text
-                      :drawingml/font-size (font-size block 20)
-                      :drawingml/color (or (solid-fill block) "17202A")}
-                     (xfrm block))
+      (cond-> (add-placeholder
+               (merge {:drawingml/id (shape-name block idx "text")
+                       :drawingml/kind :text
+                       :drawingml/text text
+                       :drawingml/font-size (font-size block 20)
+                       :drawingml/color (or (solid-fill block) "17202A")}
+                      (xfrm block))
+               block)
         (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs)))))
 
 (defn rect-shape [idx block]
   (when (= :rect (geometry block))
-    (cond-> (merge {:drawingml/id (shape-name block idx "rect")
-                    :drawingml/kind :rect
-                    :drawingml/fill (or (solid-fill block) "EAF0F8")}
-                   (xfrm block))
+    (cond-> (add-placeholder
+             (merge {:drawingml/id (shape-name block idx "rect")
+                     :drawingml/kind :rect
+                     :drawingml/fill (or (solid-fill block) "EAF0F8")}
+                    (xfrm block))
+             block)
       (line-fill block) (assoc :drawingml/line (line-fill block)))))
 
 (defn pic-shape [idx block]
@@ -130,19 +167,28 @@
               :drawingml/color "17202A"}
              (xfrm block)))))
 
-(defn chart-shape [idx block]
-  (when (re-find #"<c:chart\b" (or block ""))
-    (merge {:drawingml/id (shape-name block idx "chart")
-            :drawingml/kind :chart
-            :drawingml/text (shape-name block idx "Chart")
-            :drawingml/source-kind :drawingml/chart
-            :drawingml/font-size 12
-            :drawingml/color "334155"}
-           (xfrm block))))
+(defn chart-shape
+  ([idx block] (chart-shape idx block {}))
+  ([idx block opts]
+   (when-let [chart (re-find #"<c:chart\b[^>]*/?>" (or block ""))]
+     (let [rel-id (xml-attr chart "r:id")
+           rel (get (:rels opts) rel-id)]
+       (cond-> (merge {:drawingml/id (shape-name block idx "chart")
+                       :drawingml/kind :chart
+                       :drawingml/text (shape-name block idx "Chart")
+                       :drawingml/source-kind :drawingml/chart
+                       :drawingml/font-size 12
+                       :drawingml/color "334155"}
+                      (xfrm block))
+         rel-id (assoc :drawingml/chart-rel-id rel-id)
+         (:target-path rel) (assoc :drawingml/chart-part (:target-path rel))
+         (:workbook-path rel) (assoc :drawingml/workbook-part (:workbook-path rel)))))))
 
-(defn graphic-frame-shape [idx block]
-  (or (table-shape idx block)
-      (chart-shape idx block)))
+(defn graphic-frame-shape
+  ([idx block] (graphic-frame-shape idx block {}))
+  ([idx block opts]
+   (or (table-shape idx block)
+       (chart-shape idx block opts))))
 
 (defn fallback-text-shapes [texts]
   (vec
@@ -162,19 +208,24 @@
 (defn shapes
   ([xml] (shapes xml {}))
   ([xml opts]
-  (let [shape-blocks (vec (xml-elements xml "p:sp"))
+  (let [groups (vec (xml-elements xml "p:grpSp"))
+        shape-blocks (vec (xml-elements xml "p:sp"))
         graphic-frame-blocks (vec (xml-elements xml "p:graphicFrame"))
         table-blocks (vec (xml-elements xml "a:tbl"))
         parsed-shapes (vec (keep-indexed (fn [shape-idx block]
                                            (some-> (or (text-shape shape-idx block)
                                                        (rect-shape shape-idx block))
+                                                   (add-group (group-metadata groups block))
                                                    (with-source opts :p/sp shape-idx)))
                                          shape-blocks))
         pics (vec (map-indexed (fn [idx block]
-                                  (with-source (pic-shape idx block) opts :p/pic idx))
+                                  (-> (pic-shape idx block)
+                                      (add-group (group-metadata groups block))
+                                      (with-source opts :p/pic idx)))
                                 (xml-elements xml "p:pic")))
         graphic-frames (vec (keep-indexed (fn [idx block]
-                                             (some-> (graphic-frame-shape idx block)
+                                             (some-> (graphic-frame-shape idx block opts)
+                                                     (add-group (group-metadata groups block))
                                                      (with-source opts :p/graphicFrame idx)))
                                            graphic-frame-blocks))
         standalone-tables (vec (keep-indexed
