@@ -153,13 +153,19 @@
 
 (defn shapes [xml]
   (let [shape-blocks (vec (xml-elements xml "p:sp"))
+        graphic-frame-blocks (vec (xml-elements xml "p:graphicFrame"))
+        table-blocks (vec (xml-elements xml "a:tbl"))
         parsed-shapes (vec (keep-indexed (fn [shape-idx block]
                                            (or (text-shape shape-idx block)
                                                (rect-shape shape-idx block)))
                                          shape-blocks))
         pics (vec (map-indexed pic-shape (xml-elements xml "p:pic")))
-        graphic-frames (vec (keep-indexed graphic-frame-shape (xml-elements xml "p:graphicFrame")))
-        standalone-tables (vec (keep-indexed table-shape (xml-elements xml "a:tbl")))
+        graphic-frames (vec (keep-indexed graphic-frame-shape graphic-frame-blocks))
+        standalone-tables (vec (keep-indexed
+                                (fn [idx block]
+                                  (when-not (some #(str/includes? % block) graphic-frame-blocks)
+                                    (table-shape idx block)))
+                                table-blocks))
         parsed (vec (concat parsed-shapes pics graphic-frames standalone-tables))]
     (if (seq parsed)
       parsed
