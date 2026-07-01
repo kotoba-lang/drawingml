@@ -48,6 +48,14 @@
   (or (xml-attr (or (re-find #"<p:cNvPr\b[^>]*>" (or block "")) "") "name")
       (str fallback "-" (inc idx))))
 
+(defn- with-source [shape opts kind idx]
+  (cond-> shape
+    (:part opts)
+    (assoc :ooxml/source (cond-> {:ooxml/part (:part opts)
+                                  :ooxml/kind kind
+                                  :ooxml/index idx}
+                           (:source opts) (assoc :ooxml/source (:source opts))))))
+
 (defn xfrm [block]
   (let [body (or (second (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or block "")))
                  (second (re-find #"<p:xfrm\b[^>]*>([\s\S]*?)</p:xfrm>" (or block "")))
@@ -151,28 +159,39 @@
        :drawingml/color (if (zero? idx) "17202A" "334155")})
     texts)))
 
-(defn shapes [xml]
+(defn shapes
+  ([xml] (shapes xml {}))
+  ([xml opts]
   (let [shape-blocks (vec (xml-elements xml "p:sp"))
         graphic-frame-blocks (vec (xml-elements xml "p:graphicFrame"))
         table-blocks (vec (xml-elements xml "a:tbl"))
         parsed-shapes (vec (keep-indexed (fn [shape-idx block]
-                                           (or (text-shape shape-idx block)
-                                               (rect-shape shape-idx block)))
+                                           (some-> (or (text-shape shape-idx block)
+                                                       (rect-shape shape-idx block))
+                                                   (with-source opts :p/sp shape-idx)))
                                          shape-blocks))
-        pics (vec (map-indexed pic-shape (xml-elements xml "p:pic")))
-        graphic-frames (vec (keep-indexed graphic-frame-shape graphic-frame-blocks))
+        pics (vec (map-indexed (fn [idx block]
+                                  (with-source (pic-shape idx block) opts :p/pic idx))
+                                (xml-elements xml "p:pic")))
+        graphic-frames (vec (keep-indexed (fn [idx block]
+                                             (some-> (graphic-frame-shape idx block)
+                                                     (with-source opts :p/graphicFrame idx)))
+                                           graphic-frame-blocks))
         standalone-tables (vec (keep-indexed
                                 (fn [idx block]
                                   (when-not (some #(str/includes? % block) graphic-frame-blocks)
-                                    (table-shape idx block)))
+                                    (some-> (table-shape idx block)
+                                            (with-source opts :a/tbl idx))))
                                 table-blocks))
         parsed (vec (concat parsed-shapes pics graphic-frames standalone-tables))]
     (if (seq parsed)
       parsed
       (let [texts (vec (xml-texts xml "a:t"))]
         (if (seq texts)
-          (fallback-text-shapes texts)
-          [])))))
+          (vec (map-indexed (fn [idx shape]
+                              (with-source shape opts :fallback/text idx))
+                            (fallback-text-shapes texts)))
+          []))))))
 
 (defn valid-shape? [shape]
   (and (map? shape)

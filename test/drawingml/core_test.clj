@@ -52,9 +52,13 @@
                  "<p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"2743200\" cy=\"914400\"/></a:xfrm>"
                  "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"ABCDEF\"/></a:solidFill>"
                  "<a:ln><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:ln></p:spPr></p:sp>")
-        parsed (first (parse/shapes xml))]
+        parsed (first (parse/shapes xml {:part "ppt/slides/slide1.xml"}))]
     (is (= :rect (:drawingml/kind parsed)))
     (is (= "Headline" (:drawingml/id parsed)))
+    (is (= {:ooxml/part "ppt/slides/slide1.xml"
+            :ooxml/kind :p/sp
+            :ooxml/index 0}
+           (:ooxml/source parsed)))
     (is (= 1.0 (:drawingml/x parsed)))
     (is (= 0.5 (:drawingml/y parsed)))
     (is (= 3.0 (:drawingml/w parsed)))
