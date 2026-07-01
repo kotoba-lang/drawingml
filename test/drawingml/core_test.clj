@@ -6,20 +6,46 @@
 
 (deftest renders-basic-drawingml
   (is (= 95250 (dml/emu 10)))
+  (is (= "" (dml/render nil)))
+  (is (= "42" (dml/render 42)))
+  (is (= "A&amp;B" (dml/render "A&B")))
+  (is (= "true" (dml/render true)))
+  (is (= "<a:t>A</a:t><a:t>B</a:t>" (dml/render [(dml/el :a:t {} ["A"]) (dml/el :a:t {} ["B"])])))
+  (is (= " a=\"A&amp;B\"" (dml/render-attrs {:z nil :a "A&B"})))
+  (is (= {:tag :a:t :attrs {} :children []} (dml/el :a:t nil nil)))
   (is (= "<a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill>"
          (dml/render (dml/solid-fill "#ff0000"))))
   (is (str/includes? (dml/render (dml/shape-properties {:x 1 :y 2 :width 10 :height 20 :fill "#fff"}))
-                     "<a:xfrm>")))
+                     "<a:xfrm>"))
+  (is (str/includes? (dml/render (dml/xfrm {:rot 1 :flip-h true :flip-v true}))
+                     "flipH=\"1\" flipV=\"1\" rot=\"1\""))
+  (is (str/includes? (dml/render (dml/line {:width 2 :cap :round}))
+                     "<a:noFill/>"))
+  (is (str/includes? (dml/render (dml/line {:color "#222222"}))
+                     "222222"))
+  (is (str/includes? (dml/render (dml/shape-properties {:stroke {:color "#111111" :width 1}}))
+                     "<a:ln"))
+  (is (str/includes? (dml/render (dml/shape-properties {:geometry :ellipse}))
+                     "prst=\"ellipse\"")))
 
 (deftest renders-text-and-table
   (is (str/includes? (dml/render (dml/text-body (dml/paragraph (dml/text-run "Hello" {:size 12}))))
                      "<a:t>Hello</a:t>"))
   (is (str/includes? (dml/render (dml/table-row 10 [(dml/table-cell "A")]))
-                     "<a:tr h=\"95250\">")))
+                     "<a:tr h=\"95250\">"))
+  (is (str/includes? (dml/render (dml/table-cell "A" {:fill "#eeeeee"}))
+                     "EEEEEE")))
 
 (deftest validates-builder-nodes
   (is (dml/valid-node? (dml/text-body (dml/paragraph (dml/text-run "Hello")))))
-  (is (not (dml/valid-node? {:tag :a:t :attrs nil :children []}))))
+  (is (dml/valid-node? nil))
+  (is (dml/valid-node? "x"))
+  (is (dml/valid-node? 1))
+  (is (dml/valid-node? [(dml/el :a:t {} ["x"])]))
+  (is (not (dml/valid-node? {:tag :a:t :attrs nil :children []})))
+  (is (not (dml/valid-node? {:tag nil :attrs {} :children []})))
+  (is (not (dml/valid-node? {:tag :a:t :attrs {} :children nil})))
+  (is (not (dml/valid-node? Object))))
 
 (deftest parses-shape-fixture
   (let [xml (str "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Headline\"/></p:nvSpPr>"
@@ -45,3 +71,53 @@
     (is (= "Roundtrip" (:drawingml/text parsed)))
     (is (= 18.0 (:drawingml/font-size parsed)))
     (is (= "123456" (:drawingml/color parsed)))))
+
+(deftest parses-fallbacks-and-edge-cases
+  (is (= "<>&\"'" (parse/xml-unescape "&lt;&gt;&amp;&quot;&apos;")))
+  (is (nil? (parse/xml-attr "<a:t/>" "missing")))
+  (is (= ["A"] (vec (parse/xml-texts "<a:t>A</a:t><a:t> </a:t>" "a:t"))))
+  (is (= "A" (parse/first-xml-text "<a:t>A</a:t>" "a:t")))
+  (is (= ["<p:sp><a:t>A</a:t></p:sp>"] (vec (parse/xml-elements "<p:sp><a:t>A</a:t></p:sp>" "p:sp"))))
+  (is (nil? (parse/parse-double-safe "bad")))
+  (is (nil? (parse/parse-double-safe "")))
+  (is (= 7.0 (parse/parse-double-safe "7")))
+  (is (= 1.0 (parse/emu->inch "914400" 0)))
+  (is (= 5 (parse/emu->inch "-1" 5)))
+  (is (= 5 (parse/emu->inch "bad" 5)))
+  (is (= "fallback-2" (parse/shape-name "<p:sp/>" 1 "fallback")))
+  (is (= {:drawingml/x 0.8 :drawingml/y 0.8 :drawingml/w 8.4 :drawingml/h 0.7}
+         (parse/xfrm "<p:sp/>")))
+  (is (= "ABCDEF" (parse/first-color "<a:schemeClr lastClr=\"ABCDEF\"/>")))
+  (is (nil? (parse/first-color "<a:noFill/>")))
+  (is (nil? (parse/solid-fill "<a:noFill/>")))
+  (is (nil? (parse/line-fill "<a:ln><a:noFill/></a:ln>")))
+  (is (= 9 (parse/font-size "<a:rPr/>" 9)))
+  (is (nil? (parse/geometry "<p:sp/>")))
+  (is (nil? (parse/text-shape 0 "<p:sp><a:t> </a:t></p:sp>")))
+  (is (nil? (parse/rect-shape 0 "<p:sp/>")))
+  (is (= :pic (:drawingml/kind (parse/pic-shape 0 "<p:pic><p:cNvPr name=\"Photo\"/></p:pic>"))))
+  (is (nil? (parse/table-shape 0 "<a:tbl/>")))
+  (is (= :table (:drawingml/kind (parse/table-shape 0 "<a:tbl><a:t>A</a:t><a:t>B</a:t></a:tbl>"))))
+  (is (= ["text-1" "text-2"] (mapv :drawingml/id (parse/fallback-text-shapes ["A" "B"]))))
+  (is (= [] (parse/shapes "<p:sld/>")))
+  (is (= ["text-1"] (mapv :drawingml/id (parse/shapes "<p:sld><a:t>Loose</a:t></p:sld>"))))
+  (is (not (parse/valid-shape? {:drawingml/kind :unknown :drawingml/id "x"})))
+  (is (not (parse/valid-shape? {:drawingml/kind :text :drawingml/id 1})))
+  (is (not (parse/valid-shape? nil))))
+
+(deftest parses-additional-branches
+  (let [multi-text "<p:sp><p:nvSpPr><p:cNvPr name=\"Multi\"/></p:nvSpPr><p:txBody><a:p><a:r><a:t>A</a:t></a:r><a:r><a:t>B</a:t></a:r></a:p></p:txBody></p:sp>"
+        text-without-fill "<p:sp><p:nvSpPr><p:cNvPr name=\"Plain\"/></p:nvSpPr><p:txBody><a:p><a:r><a:t>Plain</a:t></a:r></a:p></p:txBody></p:sp>"
+        rect-without-fill "<p:sp><p:nvSpPr><p:cNvPr name=\"Plain rect\"/></p:nvSpPr><p:spPr><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:sp>"
+        parsed-multi (parse/text-shape 0 multi-text)
+        parsed-plain (parse/text-shape 0 text-without-fill)
+        parsed-rect (parse/rect-shape 0 rect-without-fill)]
+    (is (= :drawingml/text-runs (:drawingml/source-kind parsed-multi)))
+    (is (= "17202A" (:drawingml/color parsed-plain)))
+    (is (= "EAF0F8" (:drawingml/fill parsed-rect)))
+    (is (nil? (:drawingml/line parsed-rect)))
+    (is (= "pic-1" (:drawingml/id (parse/pic-shape 0 "<p:pic/>"))))
+    (is (= "A\nB" (:drawingml/text (parse/table-shape 0 "<a:tbl><a:t>A</a:t><a:t>B</a:t></a:tbl>"))))
+    (is (= "334155" (:drawingml/color (parse/pic-shape 0 "<p:pic/>"))))
+    (is (= 12 (:drawingml/font-size (parse/pic-shape 0 "<p:pic/>"))))
+    (is (= 14 (:drawingml/font-size (parse/table-shape 0 "<a:tbl><a:t>A</a:t></a:tbl>"))))))
