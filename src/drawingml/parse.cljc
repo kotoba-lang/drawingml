@@ -521,6 +521,58 @@
   (vec (for [row (xml-elements block "a:tr")]
          (vec (map paragraphs-text (xml-elements row "a:tc"))))))
 
+(defn- table-cell-attrs [cell-block]
+  (let [tag (or (re-find #"<a:tc\b[^>]*>" (or cell-block "")) "")]
+    {:col-span (some-> (xml-attr tag "gridSpan") parse-double-safe long)
+     :row-span (some-> (xml-attr tag "rowSpan") parse-double-safe long)
+     :h-merge? (= "1" (xml-attr tag "hMerge"))
+     :v-merge? (= "1" (xml-attr tag "vMerge"))}))
+
+(defn- table-cell-fill [cell-block theme-colors]
+  (some-> (second (re-find #"<a:tcPr\b[^>]*>([\s\S]*?)</a:tcPr>" (or cell-block "")))
+          (solid-fill theme-colors)))
+
+(defn table-cells
+  "The table's cell grid, one entry per <a:tc> in document order, each
+  either:
+  - a plain string (the common case: no merge, no per-cell fill)
+  - {:text ... :col-span N :row-span N :fill \"hex\"} for the ANCHOR cell
+    of a merge and/or a cell with its own background fill
+  - :h-merge/:v-merge/:hv-merge for a grid position covered by a preceding
+    cell's merge (OOXML still emits a <a:tc> there, hMerge=\"1\"/
+    vMerge=\"1\"/both, but it carries no content of its own).
+  Previously table-rows collapsed EVERY cell to its flattened paragraph
+  text regardless of merge/style -- a merged header row (a very common
+  real-deck pattern) silently duplicated its text into cells that should
+  have been empty merge continuations, and any per-cell background color
+  was dropped entirely."
+  ([block] (table-cells block nil))
+  ([block theme-colors]
+   (vec (for [row (xml-elements block "a:tr")]
+          (vec (for [cell (xml-elements row "a:tc")]
+                 (let [{:keys [col-span row-span h-merge? v-merge?]} (table-cell-attrs cell)]
+                   (cond
+                     (and h-merge? v-merge?) :hv-merge
+                     h-merge? :h-merge
+                     v-merge? :v-merge
+                     :else
+                     (let [text (paragraphs-text cell)
+                           fill (table-cell-fill cell theme-colors)
+                           span? (or (and col-span (> col-span 1)) (and row-span (> row-span 1)))]
+                       (if (or span? fill)
+                         (cond-> {:text text}
+                           (and col-span (> col-span 1)) (assoc :col-span col-span)
+                           (and row-span (> row-span 1)) (assoc :row-span row-span)
+                           fill (assoc :fill fill))
+                         text))))))))))
+
+(defn table-non-uniform?
+  "True when table-cells' grid has any merge/span/per-cell-fill cell -- the
+  cue a caller (table-shape) uses to decide whether the richer :cells grid
+  is worth carrying alongside the always-present flat :rows text grid."
+  [cells]
+  (boolean (some (fn [row] (some #(or (map? %) (keyword? %)) row)) cells)))
+
 (defn geometry [block]
   (some-> (re-find #"<a:prstGeom\b[^>]*>" (or block ""))
           (xml-attr "prst")
@@ -630,7 +682,8 @@
   ([idx block] (table-shape idx block {}))
   ([idx block opts]
    (let [texts (vec (xml-texts block "a:t"))
-         rows (table-rows block)]
+         rows (table-rows block)
+         cells (table-cells block (:theme-colors opts))]
      (when (seq texts)
        (cond-> (merge {:drawingml/id (shape-name block idx "table")
                        :drawingml/kind :table
@@ -641,7 +694,8 @@
                        :drawingml/font-size 14
                        :drawingml/color "17202A"}
                       (xfrm block opts))
-         (seq rows) (assoc :drawingml/rows rows))))))
+         (seq rows) (assoc :drawingml/rows rows)
+         (table-non-uniform? cells) (assoc :drawingml/cells cells))))))
 
 (defn chart-shape
   ([idx block] (chart-shape idx block {}))

@@ -93,6 +93,39 @@
       (is (= [["Q1" "10"] ["Q2" "20"]] (:drawingml/rows shape)))
       (is (= "Q1\n10\nQ2\n20" (:drawingml/text shape))))))
 
+(def merged-header-table-block
+  "A 2-column table whose header row is one gridSpan=2 cell (with its own
+  fill) followed by its hMerge continuation cell, and a plain data row
+  below it."
+  (str "<a:tbl>"
+       "<a:tr>"
+       "<a:tc gridSpan=\"2\"><a:txBody><a:p><a:r><a:t>Header</a:t></a:r></a:p></a:txBody>"
+       "<a:tcPr><a:solidFill><a:srgbClr val=\"DDEEFF\"/></a:solidFill></a:tcPr></a:tc>"
+       "<a:tc hMerge=\"1\"><a:txBody><a:p><a:endParaRPr/></a:p></a:txBody><a:tcPr/></a:tc>"
+       "</a:tr>"
+       "<a:tr>"
+       "<a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc>"
+       "<a:tc><a:txBody><a:p><a:r><a:t>10</a:t></a:r></a:p></a:txBody></a:tc>"
+       "</a:tr>"
+       "</a:tbl>"))
+
+(deftest table-cell-merge-and-fill-test
+  (testing "table-cells captures the anchor cell's span + fill, and the continuation as a merge marker"
+    (is (= [[{:text "Header" :col-span 2 :fill "DDEEFF"} :h-merge]
+            ["Q1" "10"]]
+           (dml/table-cells merged-header-table-block {:accent1 "000000"}))))
+  (testing "table-shape only carries :drawingml/cells when the table is non-uniform (has a merge/span/fill)"
+    (let [shape (dml/table-shape 0 merged-header-table-block)]
+      (is (some? (:drawingml/cells shape)))
+      (is (= [{:text "Header" :col-span 2 :fill "DDEEFF"} :h-merge] (first (:drawingml/cells shape))))
+      (testing ":drawingml/rows still carries the flat (legacy) text grid unaffected"
+        (is (= [["Header" ""] ["Q1" "10"]] (:drawingml/rows shape))))))
+  (testing "a plain uniform table (no merges/fills) gets no :drawingml/cells at all"
+    (is (nil? (:drawingml/cells (dml/table-shape 0 table-block)))))
+  (testing "table-non-uniform? correctly distinguishes the two cases"
+    (is (true? (dml/table-non-uniform? (dml/table-cells merged-header-table-block))))
+    (is (false? (dml/table-non-uniform? (dml/table-cells table-block))))))
+
 (def round-rect-themed-fill-with-text
   "A roundRect AutoShape (not :rect geometry) with a themed SHAPE fill and a
   text run that has no explicit color of its own — the shape's own
