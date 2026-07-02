@@ -224,6 +224,41 @@
                  "<a:gradFill><a:gsLst><a:gs><a:srgbClr val=\"336699\"/></a:gs></a:gsLst></a:gradFill>"
                  "</p:spPr></p:sp>"))))))
 
+(def gradient-rect-sp
+  (str "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>"
+       "<a:gradFill><a:gsLst>"
+       "<a:gs pos=\"0\"><a:srgbClr val=\"336699\"/></a:gs>"
+       "<a:gs pos=\"50000\"><a:srgbClr val=\"88AACC\"/></a:gs>"
+       "<a:gs pos=\"100000\"><a:srgbClr val=\"AABBCC\"/></a:gs>"
+       "</a:gsLst><a:lin ang=\"5400000\" scaled=\"1\"/></a:gradFill>"
+       "</p:spPr></p:sp>"))
+
+(deftest gradient-fill-multi-stop-test
+  (testing "every stop's position (thousandths-of-a-percent -> plain 0-100) and color is captured, in document order"
+    (is (= {:stops [{:position 0.0 :color "336699"}
+                    {:position 50.0 :color "88AACC"}
+                    {:position 100.0 :color "AABBCC"}]
+            :angle 90.0}
+           (dml/gradient-fill gradient-rect-sp nil))))
+  (testing "wired into rect-shape as :drawingml/gradient, alongside the still-first-stop-only :drawingml/fill"
+    (let [shape (dml/rect-shape 0 gradient-rect-sp)]
+      (is (= "336699" (:drawingml/fill shape)))
+      (is (= 3 (count (:stops (:drawingml/gradient shape)))))))
+  (testing "wired into text-shape too"
+    (let [gradient-text-sp
+          (str "<p:sp><p:spPr>" (second (re-find #"<p:spPr>([\s\S]*?)</p:spPr>" gradient-rect-sp)) "</p:spPr>"
+               "<p:txBody><a:p><a:r><a:t>Gradient text box</a:t></a:r></a:p></p:txBody></p:sp>")]
+      (is (= 3 (count (:stops (:drawingml/gradient (dml/text-shape 0 gradient-text-sp))))))))
+  (testing "a stop with no explicit pos attribute -- :position absent, not 0"
+    (is (= [{:color "112233"}]
+           (:stops (dml/gradient-fill "<p:sp><p:spPr><a:gradFill><a:gsLst><a:gs><a:srgbClr val=\"112233\"/></a:gs></a:gsLst></a:gradFill></p:spPr></p:sp>" nil)))))
+  (testing "no <a:lin> at all -- :angle absent"
+    (is (nil? (:angle (dml/gradient-fill "<p:sp><p:spPr><a:gradFill><a:gsLst><a:gs pos=\"0\"><a:srgbClr val=\"112233\"/></a:gs></a:gsLst></a:gradFill></p:spPr></p:sp>" nil)))))
+  (testing "a plain solidFill shape -- gradient-fill is nil, no :drawingml/gradient key"
+    (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/gradient-fill plain-sp nil)))
+      (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/gradient))))))
+
 (deftest rotation-and-flip-are-read-from-xfrm-test
   (testing "rot (60,000ths of a degree) converts to plain degrees"
     (let [geom (dml/xfrm-explicit "<p:sp><p:spPr><a:xfrm rot=\"2700000\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr></p:sp>")]

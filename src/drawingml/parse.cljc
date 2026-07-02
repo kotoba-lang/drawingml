@@ -363,6 +363,37 @@
   ([block theme-colors]
    (some-> (fill-block block) (first-color theme-colors))))
 
+(defn- gradient-stop [gs-block theme-colors]
+  (let [gs-tag (or (re-find #"<a:gs\b[^>]*>" gs-block) "")
+        pos (some-> (xml-attr gs-tag "pos") parse-double-safe (/ 1000.0))]
+    (cond-> {:color (first-color gs-block theme-colors)}
+      pos (assoc :position pos))))
+
+(defn gradient-fill
+  "A shape's own <a:gradFill> as {:stops [{:position 0-100 :color \"hex\"}
+  ...] :angle deg}, in document order (position is OOXML's own pos
+  attribute, thousandths-of-a-percent -> a plain 0-100 percentage; angle
+  is <a:lin ang=\"...\">, 60,000ths of a degree -> plain degrees, same
+  conversion as rotation/shadow-angle elsewhere in this file), or nil when
+  the shape's fill isn't a gradient at all.
+
+  solid-fill/fill-block still approximate a gradient to its FIRST stop's
+  color alone (kept unchanged for simple callers that only want ONE
+  color) -- this is the FULL multi-stop fidelity alongside that
+  approximation, previously entirely unavailable: a two-or-more-stop
+  gradient (common for shape fills and slide/master backgrounds) always
+  flattened to a single flat color on round-trip, silently losing the
+  gradient effect entirely."
+  [block theme-colors]
+  (when-let [grad-body (second (re-find #"<a:gradFill\b[^>]*>([\s\S]*?)</a:gradFill>" (or block "")))]
+    (let [stops (vec (for [gs (xml-elements grad-body "a:gs")]
+                       (gradient-stop gs theme-colors)))
+          lin-tag (re-find #"<a:lin\b[^>]*>" grad-body)
+          angle (some-> (xml-attr lin-tag "ang") parse-double-safe (/ 60000.0))]
+      (when (seq stops)
+        (cond-> {:stops stops}
+          angle (assoc :angle angle))))))
+
 (defn line-fill
   ([block] (line-fill block nil))
   ([block theme-colors]
@@ -816,7 +847,8 @@
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
          (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block))
-         (text-body-props block) (assoc :drawingml/body-props (text-body-props block)))))))
+         (text-body-props block) (assoc :drawingml/body-props (text-body-props block))
+         (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts))))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -846,7 +878,8 @@
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
-         custom (assoc :drawingml/custom-geometry custom))))))
+         custom (assoc :drawingml/custom-geometry custom)
+         (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts))))))))
 
 (defn pic-blip-rel-id
   "A <p:pic>'s own image, <a:blipFill><a:blip r:embed=\"...\"/>. Previously
