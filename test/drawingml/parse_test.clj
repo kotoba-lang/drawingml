@@ -32,6 +32,38 @@
 (def scheme-fill-block
   "<p:sp><p:spPr><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill></p:spPr></p:sp>")
 
+(def multi-run-single-paragraph-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r><a:rPr b=\"1\"/><a:t>Hello </a:t></a:r><a:r><a:t>world</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(def multi-paragraph-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r><a:t>Line one</a:t></a:r></a:p><a:p><a:r><a:t>Line two</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(deftest paragraph-aware-text-extraction-test
+  (testing "runs within one paragraph are concatenated, not split into lines"
+    (is (= "Hello world" (:drawingml/text (dml/text-shape 0 multi-run-single-paragraph-sp)))))
+  (testing "separate <a:p> paragraphs still become separate lines"
+    (is (= "Line one\nLine two" (:drawingml/text (dml/text-shape 0 multi-paragraph-sp))))))
+
+(def table-block
+  "<a:tbl>
+    <a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc>
+          <a:tc><a:txBody><a:p><a:r><a:t>10</a:t></a:r></a:p></a:txBody></a:tc></a:tr>
+    <a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q2</a:t></a:r></a:p></a:txBody></a:tc>
+          <a:tc><a:txBody><a:p><a:r><a:t>2</a:t></a:r><a:r><a:t>0</a:t></a:r></a:p></a:txBody></a:tc></a:tr>
+   </a:tbl>")
+
+(deftest table-rows-extraction-test
+  (testing "cell grid is extracted row-major, one paragraph-aware text per cell"
+    (is (= [["Q1" "10"] ["Q2" "20"]] (dml/table-rows table-block))))
+  (testing "table-shape carries the grid alongside the flattened legacy text"
+    (let [shape (dml/table-shape 0 table-block)]
+      (is (= [["Q1" "10"] ["Q2" "20"]] (:drawingml/rows shape)))
+      (is (= "Q1\n10\nQ2\n20" (:drawingml/text shape))))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))

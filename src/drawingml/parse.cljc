@@ -184,6 +184,32 @@
     (double (/ sz 100))
     fallback))
 
+(defn- paragraph-text
+  "A single <a:p>'s own text: its runs concatenated with no separator (they
+  are contiguous, differently-styled spans of the same line)."
+  [p-block]
+  (str/join "" (xml-texts p-block "a:t")))
+
+(defn paragraphs-text
+  "Paragraph-aware text extraction: <a:p> elements joined by newline (each is
+  its own line/bullet), while runs *within* a paragraph are concatenated
+  without a separator. Prior flattening (every <a:t> in the block joined by
+  newline) wrongly treated same-paragraph, differently-styled runs as
+  separate lines. Falls back to that flat join when no <a:p> boundary is
+  found (e.g. a bare fragment)."
+  [block]
+  (let [paragraphs (xml-elements block "a:p")]
+    (if (seq paragraphs)
+      (str/join "\n" (map paragraph-text paragraphs))
+      (str/join "\n" (xml-texts block "a:t")))))
+
+(defn table-rows
+  "The table's cell grid as rows of paragraph-aware cell text, reading <a:tr>
+  then <a:tc> in document order. Empty when the block has no rows."
+  [block]
+  (vec (for [row (xml-elements block "a:tr")]
+         (vec (map paragraphs-text (xml-elements row "a:tc"))))))
+
 (defn geometry [block]
   (some-> (re-find #"<a:prstGeom\b[^>]*>" (or block ""))
           (xml-attr "prst")
@@ -193,7 +219,7 @@
   ([idx block] (text-shape idx block {}))
   ([idx block opts]
    (let [texts (vec (xml-texts block "a:t"))
-         text (str/join "\n" texts)]
+         text (paragraphs-text block)]
      (when-not (str/blank? text)
        (cond-> (add-placeholder
                 (merge {:drawingml/id (shape-name block idx "text")
@@ -231,15 +257,19 @@
 (defn table-shape
   ([idx block] (table-shape idx block {}))
   ([idx block opts]
-   (let [texts (vec (xml-texts block "a:t"))]
+   (let [texts (vec (xml-texts block "a:t"))
+         rows (table-rows block)]
      (when (seq texts)
-       (merge {:drawingml/id (shape-name block idx "table")
-               :drawingml/kind :table
-               :drawingml/text (str/join "\n" texts)
-               :drawingml/source-kind :drawingml/table
-               :drawingml/font-size 14
-               :drawingml/color "17202A"}
-              (xfrm block opts))))))
+       (cond-> (merge {:drawingml/id (shape-name block idx "table")
+                       :drawingml/kind :table
+                       :drawingml/text (if (seq rows)
+                                         (str/join "\n" (mapcat identity rows))
+                                         (str/join "\n" texts))
+                       :drawingml/source-kind :drawingml/table
+                       :drawingml/font-size 14
+                       :drawingml/color "17202A"}
+                      (xfrm block opts))
+         (seq rows) (assoc :drawingml/rows rows))))))
 
 (defn chart-shape
   ([idx block] (chart-shape idx block {}))
