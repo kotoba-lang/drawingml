@@ -305,11 +305,22 @@
           keyword))
 
 (defn text-shape
+  "A shape with a text label. When it also has a non-default geometry
+  (roundRect, oval, ...) and/or its own fill/line, those are carried too
+  (:drawingml/geometry/:drawingml/fill/:drawingml/line) instead of being
+  silently dropped -- previously only :rect-geometry, TEXT-LESS shapes
+  (rect-shape) preserved fill/line at all, so any styled AutoShape that also
+  had a label (a very common combination -- a callout box, a colored
+  process-diagram step) lost its box entirely on export, leaving only bare
+  text floating at the same position."
   ([idx block] (text-shape idx block {}))
   ([idx block opts]
    (let [texts (vec (xml-texts block "a:t"))
          text (paragraphs-text block)
-         paras (paragraphs block)]
+         paras (paragraphs block)
+         geom (geometry block)
+         fill (solid-fill block (:theme-colors opts))
+         line (line-fill block (:theme-colors opts))]
      (when-not (str/blank? text)
        (cond-> (add-placeholder
                 (merge {:drawingml/id (shape-name block idx "text")
@@ -320,15 +331,26 @@
                        (xfrm block opts))
                 block)
          (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs)
-         (seq paras) (assoc :drawingml/paragraphs paras))))))
+         (seq paras) (assoc :drawingml/paragraphs paras)
+         (and geom (not= :rect geom)) (assoc :drawingml/geometry geom)
+         fill (assoc :drawingml/fill fill)
+         line (assoc :drawingml/line line))))))
 
 (defn rect-shape
+  "A styled AutoShape with NO text label. Matches any recognized
+  <a:prstGeom> (rect, roundRect, ellipse, arrows, stars, ...), not just an
+  exact prst=\"rect\" -- a non-rect shape with no text used to be dropped
+  entirely (invisible on import) since only this exact-rect check ever
+  produced a shape for text-less blocks. The actual preset is carried as
+  :drawingml/geometry so a writer can reproduce the real outline instead of
+  always drawing a plain rectangle."
   ([idx block] (rect-shape idx block {}))
   ([idx block opts]
-   (when (= :rect (geometry block))
+   (when-let [geom (geometry block)]
      (cond-> (add-placeholder
               (merge {:drawingml/id (shape-name block idx "rect")
                       :drawingml/kind :rect
+                      :drawingml/geometry geom
                       :drawingml/fill (or (solid-fill block (:theme-colors opts)) "EAF0F8")}
                      (xfrm block opts))
               block)
@@ -400,6 +422,18 @@
        :drawingml/color (if (zero? idx) "17202A" "334155")})
     texts)))
 
+(defn connector-shape
+  "A <p:cxnSp> connector line/arrow between shapes. Previously totally
+  unhandled (zero references anywhere in this package) -- connectors are
+  common in flowcharts/diagrams and were silently vanishing on import."
+  ([idx block] (connector-shape idx block {}))
+  ([idx block opts]
+   (merge {:drawingml/id (shape-name block idx "connector")
+           :drawingml/kind :connector
+           :drawingml/geometry (or (geometry block) :straightConnector1)
+           :drawingml/line (or (line-fill block (:theme-colors opts)) "334155")}
+          (xfrm block opts))))
+
 (defn shapes
   ([xml] (shapes xml {}))
   ([xml opts]
@@ -418,6 +452,11 @@
                                       (add-group (group-metadata groups block))
                                       (with-source opts :p/pic idx)))
                                 (xml-elements xml "p:pic")))
+        connectors (vec (map-indexed (fn [idx block]
+                                        (-> (connector-shape idx block opts)
+                                            (add-group (group-metadata groups block))
+                                            (with-source opts :p/cxnSp idx)))
+                                      (xml-elements xml "p:cxnSp")))
         graphic-frames (vec (keep-indexed (fn [idx block]
                                              (some-> (graphic-frame-shape idx block opts)
                                                      (add-group (group-metadata groups block))
@@ -429,7 +468,7 @@
                                     (some-> (table-shape idx block opts)
                                             (with-source opts :a/tbl idx))))
                                 table-blocks))
-        parsed (vec (concat parsed-shapes pics graphic-frames standalone-tables))]
+        parsed (vec (concat parsed-shapes pics connectors graphic-frames standalone-tables))]
     (if (seq parsed)
       parsed
       (let [texts (vec (xml-texts xml "a:t"))]
@@ -441,5 +480,5 @@
 
 (defn valid-shape? [shape]
   (and (map? shape)
-       (contains? #{:text :rect :pic :table :chart} (:drawingml/kind shape))
+       (contains? #{:text :rect :pic :table :chart :connector} (:drawingml/kind shape))
        (string? (:drawingml/id shape))))

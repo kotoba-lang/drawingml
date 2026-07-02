@@ -118,9 +118,35 @@
   (testing "a run's own explicit color still resolves correctly, unaffected by the shape's fill"
     (let [shape (dml/text-shape 0 rect-with-explicit-run-color {})]
       (is (= "112233" (:drawingml/color shape)))))
-  (testing "rect-shape's own :drawingml/fill is unaffected — it still reads the shape's spPr fill"
+  (testing "the shape's own fill/geometry ARE carried on the text-shape now (just not as its text color)"
+    (let [shape (dml/text-shape 0 round-rect-themed-fill-with-text {:theme-colors {:accent3 "9BC15C"}})]
+      (is (= :roundRect (:drawingml/geometry shape)))
+      (is (= "9BC15C" (:drawingml/fill shape)))))
+  (testing "rect-shape (the text-less path) also now matches any geometry, not just exact :rect"
     (let [shape (dml/rect-shape 0 round-rect-themed-fill-with-text {:theme-colors {:accent3 "9BC15C"}})]
-      (is (nil? shape) "roundRect isn't :rect geometry, so rect-shape doesn't match it at all"))))
+      (is (= :roundRect (:drawingml/geometry shape)))
+      (is (= "9BC15C" (:drawingml/fill shape))))))
+
+(def straight-connector-block
+  "<p:cxnSp><p:nvCxnSpPr><p:cNvPr id=\"5\" name=\"Arrow\"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+   <p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"1828800\" cy=\"0\"/></a:xfrm>
+   <a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom>
+   <a:ln><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:ln></p:spPr></p:cxnSp>")
+
+(deftest connector-shape-test
+  (testing "a connector, previously entirely unhandled, is now captured with its geometry/position/line color"
+    (let [shape (dml/connector-shape 0 straight-connector-block)]
+      (is (= :connector (:drawingml/kind shape)))
+      (is (= :straightConnector1 (:drawingml/geometry shape)))
+      (is (= "445566" (:drawingml/line shape)))
+      (is (= 1.0 (:drawingml/x shape)))
+      (is (= 0.5 (:drawingml/y shape)))
+      (is (= 2.0 (:drawingml/w shape)))))
+  (testing "shapes() picks up <p:cxnSp> elements alongside <p:sp>/<p:pic>"
+    (let [xml (str "<p:spTree>" straight-connector-block "</p:spTree>")
+          found (dml/shapes xml)]
+      (is (= 1 (count found)))
+      (is (= :connector (:drawingml/kind (first found)))))))
 
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
