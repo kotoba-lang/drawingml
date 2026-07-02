@@ -735,6 +735,43 @@
                   :when (and gd-name fmla)]
               {:name gd-name :fmla fmla}))))))
 
+(defn text-body-props
+  "A shape's own <a:bodyPr> (word-wrap, vertical anchor, internal margins,
+  autofit) -- previously entirely unread. <a:bodyPr wrap=\"square\"> was
+  ALWAYS hardcoded on write regardless of source, silently discarding
+  wrap=\"none\" (no-wrap text boxes), any non-default vertical anchor
+  (PowerPoint's own vertical-center/-bottom text alignment), custom
+  internal margins, and shrink-to-fit/resize-shape-to-fit autofit -- all
+  common in real hand-authored decks. Only non-default values are
+  captured (same \"absent means default\" convention as align/bullet/
+  line-spacing elsewhere in this file), so a plain shape round-trips
+  unchanged. nil for a shape with no <a:bodyPr> at all."
+  [block]
+  (when-let [tag-xml (or (re-find #"<a:bodyPr\b[^>]*>[\s\S]*?</a:bodyPr>" (or block ""))
+                         (re-find #"<a:bodyPr\b[^>]*/>" (or block "")))]
+    (let [tag (xp/parse tag-xml)
+          autofit (cond
+                    (seq (xp/find-all tag :a/spAutoFit)) :resize-shape
+                    (seq (xp/find-all tag :a/noAutofit)) :none
+                    (seq (xp/find-all tag :a/normAutofit)) :shrink
+                    :else nil)
+          norm-autofit (when (= autofit :shrink) (first (xp/find-all tag :a/normAutofit)))]
+      (not-empty
+       (cond-> {}
+         (= "none" (xp/el-attr tag "wrap")) (assoc :wrap :none)
+         (= "ctr" (xp/el-attr tag "anchor")) (assoc :anchor :center)
+         (= "b" (xp/el-attr tag "anchor")) (assoc :anchor :bottom)
+         (= "1" (xp/el-attr tag "anchorCtr")) (assoc :anchor-center true)
+         (xp/el-attr tag "lIns") (assoc :margin-left (some-> (xp/el-attr tag "lIns") parse-double-safe (/ emu-per-inch)))
+         (xp/el-attr tag "tIns") (assoc :margin-top (some-> (xp/el-attr tag "tIns") parse-double-safe (/ emu-per-inch)))
+         (xp/el-attr tag "rIns") (assoc :margin-right (some-> (xp/el-attr tag "rIns") parse-double-safe (/ emu-per-inch)))
+         (xp/el-attr tag "bIns") (assoc :margin-bottom (some-> (xp/el-attr tag "bIns") parse-double-safe (/ emu-per-inch)))
+         autofit (assoc :autofit autofit)
+         (xp/el-attr norm-autofit "fontScale")
+         (assoc :font-scale (some-> (xp/el-attr norm-autofit "fontScale") parse-double-safe (/ 1000.0)))
+         (xp/el-attr norm-autofit "lnSpcReduction")
+         (assoc :line-spacing-reduction (some-> (xp/el-attr norm-autofit "lnSpcReduction") parse-double-safe (/ 1000.0))))))))
+
 (defn text-shape
   "A shape with a text label. When it also has a non-default geometry
   (roundRect, oval, ...) and/or its own fill/line, those are carried too
@@ -778,7 +815,8 @@
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
-         (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block)))))))
+         (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block))
+         (text-body-props block) (assoc :drawingml/body-props (text-body-props block)))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
