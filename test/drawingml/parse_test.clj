@@ -286,6 +286,27 @@
       (is (nil? (dml/line-dash solid-sp)))
       (is (not (contains? (dml/rect-shape 0 solid-sp) :drawingml/line-dash))))))
 
+(def picture-filled-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
+     <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
+   </p:spPr></p:sp>")
+
+(deftest picture-fill-as-shape-fill-test
+  (testing "a shape's own fill IS a picture (<a:blipFill> in <p:spPr>, distinct from <p:pic>) -- rel-id and resolved part are captured"
+    (is (= "rId5" (dml/blip-fill-rel-id picture-filled-rect-sp)))
+    (is (= "ppt/media/image3.png"
+           (dml/blip-fill-part picture-filled-rect-sp {:rels {"rId5" {:target-path "ppt/media/image3.png"}}})))
+    (let [shape (dml/rect-shape 0 picture-filled-rect-sp {:rels {"rId5" {:target-path "ppt/media/image3.png"}}})]
+      (is (= "rId5" (:drawingml/fill-image-rel-id shape)))
+      (is (= "ppt/media/image3.png" (:drawingml/fill-image-part shape)))))
+  (testing "a normal solidFill shape has no blip-fill keys at all"
+    (let [solid-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/blip-fill-rel-id solid-sp)))
+      (is (not (contains? (dml/rect-shape 0 solid-sp) :drawingml/fill-image-rel-id)))))
+  (testing "a text-shape variant also carries the blip-fill reference"
+    (let [text-block "<p:sp><p:spPr><a:blipFill><a:blip r:embed=\"rId7\"/></a:blipFill></p:spPr><p:txBody><a:p><a:r><a:t>Label</a:t></a:r></a:p></p:txBody></p:sp>"]
+      (is (= "rId7" (:drawingml/fill-image-rel-id (dml/text-shape 0 text-block)))))))
+
 (deftest first-color-prefers-pre-resolved-clr-map-alias-test
   (testing "when theme-colors already has the RAW alias key (a custom clrMap resolution), it wins over the default bg/tx translation"
     (is (= "AABBCC"
