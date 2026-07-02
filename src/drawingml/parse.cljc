@@ -47,39 +47,24 @@
 (defn xml-elements [xml tag]
   (re-seq (re-pattern (str "<" tag "\\b[\\s\\S]*?</" tag ">")) (or xml "")))
 
-(defn- balanced-tag-spans
-  "Nesting-aware [start end] index pairs for every open-tag...close-tag
-  region in xml, INCLUDING tags nested within themselves (e.g. a group
-  inside a group) -- unlike xml-elements' non-greedy regex, which for a
-  self-nesting tag matches only up to the FIRST closing tag found,
-  truncating an outer element at its innermost child's close and losing the
-  outer's true extent (and anything after that inner close). open-tag/
-  close-tag must be exact literal strings (no attributes on open-tag) --
-  true for <p:grpSp>, the one tag in this package that legitimately nests."
-  [xml open-tag close-tag]
-  (let [open-len (count open-tag)
-        close-len (count close-tag)]
-    (loop [pos 0 stack [] spans []]
-      (let [open-at (str/index-of xml open-tag pos)
-            close-at (str/index-of xml close-tag pos)]
-        (cond
-          (nil? close-at) spans
-          (and open-at (< open-at close-at))
-          (recur (+ open-at open-len) (conj stack open-at) spans)
-          :else
-          (if (seq stack)
-            (let [start (peek stack)
-                  stack' (pop stack)]
-              (recur (+ close-at close-len) stack' (conj spans [start (+ close-at close-len)])))
-            (recur (+ close-at close-len) stack spans)))))))
-
-(defn- nested-group-blocks
-  "Every <p:grpSp>...</p:grpSp> block in xml, any nesting depth, each
-  correctly bounded by its OWN matching close tag. Ordered innermost-closes-
-  first (a group's closing tag is found before its parent's)."
+(defn- doc-tree
+  "Parses `xml` (which may be a bare fragment of sibling shapes, not
+  necessarily a single-rooted document) into an xml.parse tree, wrapping it
+  in a synthetic root so parsing always has exactly one element to work
+  with regardless of the caller's input shape."
   [xml]
-  (mapv (fn [[start end]] (subs xml start end))
-        (balanced-tag-spans (or xml "") "<p:grpSp>" "</p:grpSp>")))
+  (xp/parse (str "<root>" (or xml "") "</root>")))
+
+(defn- nested-group-nodes
+  "Every <p:grpSp> node in xml, any nesting depth, as PARSED TREE NODES
+  (not strings) -- xml.parse's find-all walks the real tree structure, so
+  a group inside a group is delimited correctly with no special handling
+  at all, unlike xml-elements' non-greedy regex (which, for a self-nesting
+  tag, matches only up to the FIRST closing tag found, truncating an outer
+  group at its innermost child's close). Document (pre-)order, i.e.
+  outermost-first."
+  [xml]
+  (xp/find-all (doc-tree xml) :p/grpSp))
 
 (defn parse-double-safe [x]
   (when-not (str/blank? (str x))
@@ -114,46 +99,78 @@
     (placeholder block) (assoc :drawingml/placeholder (placeholder block))))
 
 (defn- containing-groups
-  "Every group block that contains `block` (excluding block itself, when
-  block IS a group), innermost (smallest span) first -- the shape's full
-  ancestor chain when it's nested inside a group inside a group, not just
-  its immediate parent."
-  [groups block]
-  (->> groups
-       (filter (fn [g] (and (not= g block) (str/includes? g block))))
-       (sort-by count)))
+  "Every group NODE that structurally contains the shape parsed from
+  `block` (a shape's raw string block, from xml-elements), innermost
+  first -- the shape's full ancestor chain when it's nested inside a group
+  inside a group, not just its immediate parent.
 
-(defn- group-metadata [groups block]
-  (when-let [group-block (first (containing-groups groups block))]
-    (let [idx (first (keep-indexed (fn [i g] (when (= g group-block) i)) groups))]
+  Determines containment by re-parsing `block` into its own tree node and
+  checking, for each candidate group, whether that exact node appears
+  among the group's descendants (find-all is a pure function of the
+  string, so a shape re-parsed standalone is structurally identical to the
+  same shape found while parsing the whole document) -- NOT by substring-
+  matching raw text, which breaks the moment a node's text can't be
+  compared byte-for-byte (e.g. after re-serializing). group-nodes is in
+  outermost-first document order (see nested-group-nodes); since a filter
+  preserves relative order, reversing it after filtering yields innermost-
+  first without any span/length heuristics."
+  [group-nodes block]
+  (if (empty? group-nodes)
+    []
+    (let [shape-node (first (xp/el-elements (doc-tree block)))
+          shape-tag (xp/el-tag shape-node)]
+      (->> group-nodes
+           (filterv (fn [g] (some #(= % shape-node) (xp/find-all g shape-tag))))
+           rseq
+           vec))))
+
+(defn- node-name
+  "A tree node's own <p:cNvPr name=\"...\"/> value (find-all rather than
+  find-child since cNvPr can live a level or two down depending on which
+  nv*Pr wrapper the tag uses), or a generated fallback."
+  [node fallback-prefix idx]
+  (or (some-> (first (xp/find-all node :p/cNvPr)) (xp/el-attr "name"))
+      (str fallback-prefix "-" (inc idx))))
+
+(defn- group-metadata
+  "`chain` is a PRECOMPUTED (containing-groups groups block) result -- the
+  caller (shapes) computes it once per shape and reuses it here AND in
+  apply-group-geometry, instead of each independently re-parsing/re-
+  scanning for the same answer."
+  [groups chain]
+  (when-let [group-node (first chain)]
+    (let [idx (first (keep-indexed (fn [i g] (when (= g group-node) i)) groups))]
       {:index idx
-       :id (shape-name group-block idx "group")})))
+       :id (node-name group-node "group" idx)})))
 
 (defn- add-group [shape group]
   (cond-> shape
     group (assoc :drawingml/group group)))
 
 (defn- group-xfrm
-  "A <p:grpSp>'s own transform: off/ext (its box in SLIDE coordinates) and
-  chOff/chExt (the origin/extent of the coordinate space its CHILDREN's own
-  xfrm off/ext are expressed in -- almost never identical to off/ext, since
-  PowerPoint lets a group's child coordinate space be scaled independently
-  of the group's on-slide box, e.g. when the group has been resized after
-  grouping). nil when the group has no xfrm at all."
-  [group-block]
-  (when-let [body (second (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or group-block "")))]
-    (let [off (or (re-find #"<a:off\b[^>]*>" body) "")
-          ext (or (re-find #"<a:ext\b[^>]*>" body) "")
-          ch-off (or (re-find #"<a:chOff\b[^>]*>" body) "")
-          ch-ext (or (re-find #"<a:chExt\b[^>]*>" body) "")]
-      {:off-x (emu->inch (xml-attr off "x") 0)
-       :off-y (emu->inch (xml-attr off "y") 0)
-       :ext-w (emu->inch (xml-attr ext "cx") 1)
-       :ext-h (emu->inch (xml-attr ext "cy") 1)
-       :ch-off-x (emu->inch (xml-attr ch-off "x") 0)
-       :ch-off-y (emu->inch (xml-attr ch-off "y") 0)
-       :ch-ext-w (emu->inch (xml-attr ch-ext "cx") 1)
-       :ch-ext-h (emu->inch (xml-attr ch-ext "cy") 1)})))
+  "A <p:grpSp> NODE's own transform: off/ext (its box in SLIDE
+  coordinates) and chOff/chExt (the origin/extent of the coordinate space
+  its CHILDREN's own xfrm off/ext are expressed in -- almost never
+  identical to off/ext, since PowerPoint lets a group's child coordinate
+  space be scaled independently of the group's on-slide box, e.g. when the
+  group has been resized after grouping). nil when the group has no xfrm
+  at all. Reads its DIRECT child <p:grpSpPr><a:xfrm> via find-child (not
+  find-all), since find-all would incorrectly also match a nested child
+  group's own xfrm."
+  [group-node]
+  (when-let [xfrm (some-> (xp/find-child group-node :p/grpSpPr) (xp/find-child :a/xfrm))]
+    (let [off (xp/find-child xfrm :a/off)
+          ext (xp/find-child xfrm :a/ext)
+          ch-off (xp/find-child xfrm :a/chOff)
+          ch-ext (xp/find-child xfrm :a/chExt)]
+      {:off-x (emu->inch (xp/el-attr off "x") 0)
+       :off-y (emu->inch (xp/el-attr off "y") 0)
+       :ext-w (emu->inch (xp/el-attr ext "cx") 1)
+       :ext-h (emu->inch (xp/el-attr ext "cy") 1)
+       :ch-off-x (emu->inch (xp/el-attr ch-off "x") 0)
+       :ch-off-y (emu->inch (xp/el-attr ch-off "y") 0)
+       :ch-ext-w (emu->inch (xp/el-attr ch-ext "cx") 1)
+       :ch-ext-h (emu->inch (xp/el-attr ch-ext "cy") 1)})))
 
 (defn apply-group-transform
   "Maps a shape's xfrm from its group's CHILD coordinate space into slide
@@ -178,11 +195,25 @@
   "Rescales a shape's geometry into slide coordinates, composing through
   EVERY group it's nested inside (innermost first, then that group's own
   parent, and so on) -- a shape inside a group inside a group needs both
-  transform levels applied in order, not just the immediate parent's."
-  [shape groups block]
-  (reduce (fn [shp group-block] (apply-group-transform shp (group-xfrm group-block)))
+  transform levels applied in order, not just the immediate parent's.
+  `chain` is the same precomputed containing-groups result group-metadata
+  uses (see its docstring)."
+  [shape chain]
+  (reduce (fn [shp group-node] (apply-group-transform shp (group-xfrm group-node)))
           shape
-          (containing-groups groups block)))
+          chain))
+
+(defn- apply-group-info
+  "Computes a shape's group-ancestor chain ONCE and applies both its
+  :drawingml/group metadata and its geometry rescaling from it, instead of
+  group-metadata and apply-group-geometry each independently re-deriving
+  the same chain (containing-groups isn't free: it re-parses `block` and
+  scans every group's subtree)."
+  [shape groups block]
+  (let [chain (containing-groups groups block)]
+    (-> shape
+        (add-group (group-metadata groups chain))
+        (apply-group-geometry chain))))
 
 (defn- source-extras [shape]
   (cond-> {}
@@ -869,33 +900,29 @@
 (defn shapes
   ([xml] (shapes xml {}))
   ([xml opts]
-  (let [groups (nested-group-blocks xml)
+  (let [groups (nested-group-nodes xml)
         shape-blocks (vec (xml-elements xml "p:sp"))
         graphic-frame-blocks (vec (xml-elements xml "p:graphicFrame"))
         table-blocks (vec (xml-elements xml "a:tbl"))
         parsed-shapes (vec (keep-indexed (fn [shape-idx block]
                                            (some-> (or (text-shape shape-idx block opts)
                                                        (rect-shape shape-idx block opts))
-                                                   (add-group (group-metadata groups block))
-                                                   (apply-group-geometry groups block)
+                                                   (apply-group-info groups block)
                                                    (with-source opts :p/sp shape-idx)))
                                          shape-blocks))
         pics (vec (map-indexed (fn [idx block]
                                   (-> (pic-shape idx block opts)
-                                      (add-group (group-metadata groups block))
-                                      (apply-group-geometry groups block)
+                                      (apply-group-info groups block)
                                       (with-source opts :p/pic idx)))
                                 (xml-elements xml "p:pic")))
         connectors (vec (map-indexed (fn [idx block]
                                         (-> (connector-shape idx block opts)
-                                            (add-group (group-metadata groups block))
-                                            (apply-group-geometry groups block)
+                                            (apply-group-info groups block)
                                             (with-source opts :p/cxnSp idx)))
                                       (xml-elements xml "p:cxnSp")))
         graphic-frames (vec (keep-indexed (fn [idx block]
                                              (some-> (graphic-frame-shape idx block opts)
-                                                     (add-group (group-metadata groups block))
-                                                     (apply-group-geometry groups block)
+                                                     (apply-group-info groups block)
                                                      (with-source opts :p/graphicFrame idx)))
                                            graphic-frame-blocks))
         standalone-tables (vec (keep-indexed
