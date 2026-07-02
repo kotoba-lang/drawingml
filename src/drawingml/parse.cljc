@@ -526,6 +526,27 @@
           (xml-attr "prst")
           keyword))
 
+(defn shape-adjustments
+  "A shape's own <a:prstGeom>'s adjustment handle values (<a:avLst><a:gd
+  name=\"...\" fmla=\"...\"/>...</a:avLst>), as a vector of {:name ... :fmla
+  ...} maps (raw fmla string preserved verbatim rather than interpreted --
+  formulas vary in structure by shape type, and round-tripping the exact
+  source text is always faithful where reinterpreting it might not be), or
+  nil for an empty/absent <a:avLst> (the common case for most shapes).
+  Previously unread anywhere -- a shape with a customized adjustment (e.g.
+  a roundRect with a non-default corner radius, a custom arrowhead ratio)
+  always round-tripped to the geometry's DEFAULT adjustment instead of the
+  source's actual one."
+  [block]
+  (let [geom-block (second (re-find #"<a:prstGeom\b[^>]*>([\s\S]*?)</a:prstGeom>" (or block "")))
+        av-lst (some-> geom-block (->> (re-find #"<a:avLst\b[^>]*>([\s\S]*?)</a:avLst>")) second)]
+    (when (seq av-lst)
+      (not-empty
+       (vec (for [gd (re-seq #"<a:gd\b[^>]*/?>" av-lst)
+                  :let [gd-name (xml-attr gd "name") fmla (xml-attr gd "fmla")]
+                  :when (and gd-name fmla)]
+              {:name gd-name :fmla fmla}))))))
+
 (defn text-shape
   "A shape with a text label. When it also has a non-default geometry
   (roundRect, oval, ...) and/or its own fill/line, those are carried too
@@ -566,7 +587,8 @@
          (line-dash block) (assoc :drawingml/line-dash (line-dash block))
          (line-width block) (assoc :drawingml/line-width (line-width block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
-         (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts)))))))
+         (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
+         (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block)))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -590,7 +612,8 @@
        (line-dash block) (assoc :drawingml/line-dash (line-dash block))
        (line-width block) (assoc :drawingml/line-width (line-width block))
        (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
-       (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))))))
+       (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
+       (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))))))
 
 (defn pic-shape
   ([idx block] (pic-shape idx block {}))
@@ -670,7 +693,8 @@
                    :drawingml/line (or (line-fill block (:theme-colors opts)) "334155")}
                   (xfrm block opts))
      (line-dash block) (assoc :drawingml/line-dash (line-dash block))
-     (line-width block) (assoc :drawingml/line-width (line-width block)))))
+     (line-width block) (assoc :drawingml/line-width (line-width block))
+     (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block)))))
 
 (defn shapes
   ([xml] (shapes xml {}))
