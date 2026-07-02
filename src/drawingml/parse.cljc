@@ -657,14 +657,27 @@
       "l" :left
       nil)))
 
-(defn- paragraph-bullet [pPr]
+(defn- paragraph-bullet
+  "A paragraph's own bullet, {:type :none}/{:type :char :char \"...\"}/
+  {:type :auto-num :scheme \"...\" :start-at N}. start-at (the number an
+  <a:buAutoNum> restarts counting from, via its own startAt attribute) is
+  only present when the source XML actually sets it -- absent means
+  PowerPoint's own default of 1, same \"absent means default\" convention
+  as this package's other optional numeric fields. Previously unread --
+  a numbered list restarted (e.g. split across text boxes/slides, or
+  deliberately continued from an earlier list) always round-tripped
+  restarting from 1."
+  [pPr]
   (when pPr
     (cond
       (re-find #"<a:buNone\b" pPr) {:type :none}
       :else (or (when-let [ch (second (re-find #"<a:buChar\b[^>]*\bchar=\"([^\"]*)\"" pPr))]
                   {:type :char :char (xml-unescape ch)})
-                (when-let [scheme (second (re-find #"<a:buAutoNum\b[^>]*\btype=\"([^\"]*)\"" pPr))]
-                  {:type :auto-num :scheme scheme})))))
+                (when-let [auto-num (re-find #"<a:buAutoNum\b[^>]*/?>" pPr)]
+                  (when-let [scheme (xml-attr auto-num "type")]
+                    (cond-> {:type :auto-num :scheme scheme}
+                      (some-> (xml-attr auto-num "startAt") parse-double-safe)
+                      (assoc :start-at (long (parse-double-safe (xml-attr auto-num "startAt")))))))))))
 
 (defn- paragraph-line-spacing
   "A paragraph's line spacing as a multiplier (1.0 = single spacing), from
