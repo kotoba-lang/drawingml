@@ -373,6 +373,36 @@
       (is (nil? (dml/shape-shadow plain-sp nil)))
       (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/shadow))))))
 
+(def image-pic-sp
+  "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
+     <p:blipFill><a:blip r:embed=\"rId4\"/></p:blipFill>
+     <p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr>
+   </p:pic>")
+
+(def video-pic-sp
+  "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Video\"/><p:cNvPicPr/>
+     <p:nvPr><a:videoFile r:link=\"rId6\"/></p:nvPr></p:nvPicPr>
+     <p:blipFill><a:blip r:embed=\"rId5\"/></p:blipFill>
+     <p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr>
+   </p:pic>")
+
+(deftest pic-media-references-test
+  (testing "a plain picture's blip r:embed is captured and resolved through opts' :rels"
+    (let [shape (dml/pic-shape 0 image-pic-sp {:rels {"rId4" {:target-path "ppt/media/image1.png"}}})]
+      (is (= "rId4" (:drawingml/image-rel-id shape)))
+      (is (= "ppt/media/image1.png" (:drawingml/image-part shape)))
+      (is (not (contains? shape :drawingml/video-rel-id)))))
+  (testing "a video pic ALSO carries its poster-frame blip AND its videoFile link"
+    (let [shape (dml/pic-shape 0 video-pic-sp {:rels {"rId5" {:target-path "ppt/media/image2.png"}
+                                                       "rId6" {:target-path "ppt/media/media1.mp4"}}})]
+      (is (= "rId5" (:drawingml/image-rel-id shape)))
+      (is (= "rId6" (:drawingml/video-rel-id shape)))
+      (is (= "ppt/media/media1.mp4" (:drawingml/video-part shape)))))
+  (testing "no matching :rels entry -- rel-id is still captured, but no *-part key"
+    (let [shape (dml/pic-shape 0 image-pic-sp {})]
+      (is (= "rId4" (:drawingml/image-rel-id shape)))
+      (is (not (contains? shape :drawingml/image-part))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>

@@ -696,16 +696,46 @@
        (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
        (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))))))
 
+(defn pic-blip-rel-id
+  "A <p:pic>'s own image, <a:blipFill><a:blip r:embed=\"...\"/>. Previously
+  unread anywhere -- a picture shape only ever carried its position/size,
+  with zero reference back to which actual image part it was, even though
+  the reference itself (not the raw bytes) is cheap to capture and
+  sufficient for an update-path patch to preserve or re-target it."
+  [block]
+  (some-> (re-find #"<a:blip\b[^>]*\br:embed=\"([^\"]*)\"" (or block "")) second))
+
+(defn pic-video-rel-id
+  "A <p:pic>'s linked video, <p:nvPr><a:videoFile r:link=\"...\"/>.
+  Previously unread anywhere -- video media was entirely unhandled."
+  [block]
+  (some-> (re-find #"<a:videoFile\b[^>]*\br:link=\"([^\"]*)\"" (or block "")) second))
+
+(defn pic-audio-rel-id
+  "A <p:pic>'s linked audio, <p:nvPr><a:audioFile r:link=\"...\"/>.
+  Previously unread anywhere -- audio media was entirely unhandled."
+  [block]
+  (some-> (re-find #"<a:audioFile\b[^>]*\br:link=\"([^\"]*)\"" (or block "")) second))
+
 (defn pic-shape
   ([idx block] (pic-shape idx block {}))
   ([idx block opts]
-   (merge {:drawingml/id (shape-name block idx "pic")
-           :drawingml/kind :pic
-           :drawingml/text (shape-name block idx "Picture")
-           :drawingml/source-kind :drawingml/pic
-           :drawingml/font-size 12
-           :drawingml/color "334155"}
-          (xfrm block opts))))
+   (let [blip-rel (pic-blip-rel-id block)
+         video-rel (pic-video-rel-id block)
+         audio-rel (pic-audio-rel-id block)]
+     (cond-> (merge {:drawingml/id (shape-name block idx "pic")
+                     :drawingml/kind :pic
+                     :drawingml/text (shape-name block idx "Picture")
+                     :drawingml/source-kind :drawingml/pic
+                     :drawingml/font-size 12
+                     :drawingml/color "334155"}
+                    (xfrm block opts))
+       blip-rel (assoc :drawingml/image-rel-id blip-rel)
+       (:target-path (get (:rels opts) blip-rel)) (assoc :drawingml/image-part (:target-path (get (:rels opts) blip-rel)))
+       video-rel (assoc :drawingml/video-rel-id video-rel)
+       (:target-path (get (:rels opts) video-rel)) (assoc :drawingml/video-part (:target-path (get (:rels opts) video-rel)))
+       audio-rel (assoc :drawingml/audio-rel-id audio-rel)
+       (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))))))
 
 (defn table-shape
   ([idx block] (table-shape idx block {}))
