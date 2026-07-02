@@ -477,3 +477,39 @@
     (is (nil? (dml/solid-fill scheme-fill-block nil))))
   (testing "explicit srgbClr still wins over schemeClr when both matched"
     (is (= "AABBCC" (dml/first-color "<a:srgbClr val=\"AABBCC\"/>" {:accent1 "4472C4"})))))
+
+(def custom-geom-sp
+  "A custom-path heart-ish shape: moveTo, lnTo, cubicBezTo, arcTo, close --
+  one of each supported command type, in one <a:path>."
+  (str "<p:sp><p:spPr>"
+       "<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>"
+       "<a:pathLst><a:path w=\"1000000\" h=\"1000000\">"
+       "<a:moveTo><a:pt x=\"0\" y=\"500000\"/></a:moveTo>"
+       "<a:lnTo><a:pt x=\"500000\" y=\"0\"/></a:lnTo>"
+       "<a:cubicBezTo><a:pt x=\"600000\" y=\"100000\"/><a:pt x=\"700000\" y=\"200000\"/><a:pt x=\"800000\" y=\"300000\"/></a:cubicBezTo>"
+       "<a:arcTo wR=\"100000\" hR=\"100000\" stAng=\"0\" swAng=\"5400000\"/>"
+       "<a:close/>"
+       "</a:path></a:pathLst></a:custGeom>"
+       "<a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill>"
+       "</p:spPr></p:sp>"))
+
+(deftest custom-geometry-test
+  (testing "every supported command type is read, in order, with its own data"
+    (is (= [{:width 1000000.0 :height 1000000.0
+             :commands [{:cmd :moveTo :pts [{:x 0.0 :y 500000.0}]}
+                        {:cmd :lnTo :pts [{:x 500000.0 :y 0.0}]}
+                        {:cmd :cubicBezTo :pts [{:x 600000.0 :y 100000.0}
+                                                {:x 700000.0 :y 200000.0}
+                                                {:x 800000.0 :y 300000.0}]}
+                        {:cmd :arcTo :w-radius 100000.0 :h-radius 100000.0 :start-angle 0.0 :swing-angle 5400000.0}
+                        {:cmd :close}]}]
+           (dml/custom-geometry custom-geom-sp))))
+  (testing "a custGeom-only shape (no recognized prstGeom) is NOT dropped -- rect-shape's gate accepts it"
+    (let [shape (dml/rect-shape 0 custom-geom-sp)]
+      (is (= :custom (:drawingml/geometry shape)))
+      (is (some? (:drawingml/custom-geometry shape)))
+      (is (= "445566" (:drawingml/fill shape)))))
+  (testing "a plain prstGeom shape has no :drawingml/custom-geometry at all"
+    (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/custom-geometry plain-sp)))
+      (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/custom-geometry))))))
