@@ -147,6 +147,35 @@
     (is (true? (dml/table-non-uniform? (dml/table-cells merged-header-table-block))))
     (is (false? (dml/table-non-uniform? (dml/table-cells table-block))))))
 
+(def bordered-cell-table-block
+  (str "<a:tbl><a:tr>"
+       "<a:tc><a:txBody><a:p><a:r><a:t>Header</a:t></a:r></a:p></a:txBody>"
+       "<a:tcPr>"
+       "<a:lnL w=\"12700\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:lnL>"
+       "<a:lnT w=\"25400\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:lnT>"
+       "</a:tcPr></a:tc>"
+       "<a:tc><a:txBody><a:p><a:r><a:t>Plain</a:t></a:r></a:p></a:txBody></a:tc>"
+       "</a:tr></a:tbl>"))
+
+(deftest table-cell-borders-test
+  (testing "table-cell-borders captures only the SIDES actually present, width in points"
+    (is (= {:left {:width 1.0 :color "112233"} :top {:width 2.0 :color "445566"}}
+           (dml/table-cell-borders
+            (str "<a:tc><a:tcPr>"
+                 "<a:lnL w=\"12700\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:lnL>"
+                 "<a:lnT w=\"25400\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:lnT>"
+                 "</a:tcPr></a:tc>")
+            nil))))
+  (testing "no border overrides at all -- nil"
+    (is (nil? (dml/table-cell-borders "<a:tc><a:tcPr/></a:tc>" nil)))
+    (is (nil? (dml/table-cell-borders "<a:tc><a:txBody/></a:tc>" nil))))
+  (testing "wired into table-cells as :borders on the anchor cell -- this alone makes an otherwise-plain cell non-uniform"
+    (let [cells (dml/table-cells bordered-cell-table-block nil)]
+      (is (= {:width 1.0 :color "112233"} (get-in (first cells) [0 :borders :left])))
+      (is (= {:width 2.0 :color "445566"} (get-in (first cells) [0 :borders :top])))
+      (is (= "Plain" (get-in cells [0 1])) "the other cell, with no border override, is still a plain string")
+      (is (true? (dml/table-non-uniform? cells))))))
+
 (def round-rect-themed-fill-with-text
   "A roundRect AutoShape (not :rect geometry) with a themed SHAPE fill and a
   text run that has no explicit color of its own — the shape's own

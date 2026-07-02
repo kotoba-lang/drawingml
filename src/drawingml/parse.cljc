@@ -678,12 +678,38 @@
   (some-> (second (re-find #"<a:tcPr\b[^>]*>([\s\S]*?)</a:tcPr>" (or cell-block "")))
           (solid-fill theme-colors)))
 
+(defn- table-cell-border-side [tcPr-block tag theme-colors]
+  (when-let [ln-body (second (re-find (re-pattern (str "<a:" tag "\\b[^>]*>([\\s\\S]*?)</a:" tag ">")) (or tcPr-block "")))]
+    (let [ln-open (or (re-find (re-pattern (str "<a:" tag "\\b[^>]*>")) tcPr-block) "")
+          width (some-> (xml-attr ln-open "w") parse-double-safe (/ 12700.0))
+          color (first-color ln-body theme-colors)]
+      (not-empty (cond-> {} width (assoc :width width) color (assoc :color color))))))
+
+(defn table-cell-borders
+  "A cell's own border sides (<a:tcPr>'s <a:lnL>/<a:lnR>/<a:lnT>/<a:lnB>,
+  each an <a:ln>-shaped element), as {:left {...} :right {...} :top {...}
+  :bottom {...}} (each side {:width pt :color hex}, only the sides
+  actually present) or nil for a cell with no border overrides at all
+  (the common case -- PowerPoint's own table-style default borders apply).
+  Previously unread anywhere -- a table with per-cell border customization
+  (e.g. a heavier top border on a header row, a real-deck pattern) always
+  round-tripped losing that override entirely."
+  [cell-block theme-colors]
+  (when-let [tcPr (second (re-find #"<a:tcPr\b[^>]*>([\s\S]*?)</a:tcPr>" (or cell-block "")))]
+    (not-empty
+     (cond-> {}
+       (table-cell-border-side tcPr "lnL" theme-colors) (assoc :left (table-cell-border-side tcPr "lnL" theme-colors))
+       (table-cell-border-side tcPr "lnR" theme-colors) (assoc :right (table-cell-border-side tcPr "lnR" theme-colors))
+       (table-cell-border-side tcPr "lnT" theme-colors) (assoc :top (table-cell-border-side tcPr "lnT" theme-colors))
+       (table-cell-border-side tcPr "lnB" theme-colors) (assoc :bottom (table-cell-border-side tcPr "lnB" theme-colors))))))
+
 (defn table-cells
   "The table's cell grid, one entry per <a:tc> in document order, each
   either:
-  - a plain string (the common case: no merge, no per-cell fill)
-  - {:text ... :col-span N :row-span N :fill \"hex\"} for the ANCHOR cell
-    of a merge and/or a cell with its own background fill
+  - a plain string (the common case: no merge, no per-cell fill/borders)
+  - {:text ... :col-span N :row-span N :fill \"hex\" :borders {...}} for
+    the ANCHOR cell of a merge and/or a cell with its own background
+    fill/border override
   - :h-merge/:v-merge/:hv-merge for a grid position covered by a preceding
     cell's merge (OOXML still emits a <a:tc> there, hMerge=\"1\"/
     vMerge=\"1\"/both, but it carries no content of its own).
@@ -691,7 +717,7 @@
   text regardless of merge/style -- a merged header row (a very common
   real-deck pattern) silently duplicated its text into cells that should
   have been empty merge continuations, and any per-cell background color
-  was dropped entirely."
+  or border override was dropped entirely."
   ([block] (table-cells block nil))
   ([block theme-colors]
    (vec (for [row (xml-elements block "a:tr")]
@@ -704,12 +730,14 @@
                      :else
                      (let [text (paragraphs-text cell)
                            fill (table-cell-fill cell theme-colors)
+                           borders (table-cell-borders cell theme-colors)
                            span? (or (and col-span (> col-span 1)) (and row-span (> row-span 1)))]
-                       (if (or span? fill)
+                       (if (or span? fill borders)
                          (cond-> {:text text}
                            (and col-span (> col-span 1)) (assoc :col-span col-span)
                            (and row-span (> row-span 1)) (assoc :row-span row-span)
-                           fill (assoc :fill fill))
+                           fill (assoc :fill fill)
+                           borders (assoc :borders borders))
                          text))))))))))
 
 (defn table-non-uniform?
