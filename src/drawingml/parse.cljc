@@ -89,29 +89,95 @@
                                         (source-extras shape))
                            (:source opts) (assoc :ooxml/source (:source opts))))))
 
-(defn xfrm [block]
-  (let [body (or (second (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or block "")))
-                 (second (re-find #"<p:xfrm\b[^>]*>([\s\S]*?)</p:xfrm>" (or block "")))
-                 "")
-        off (or (re-find #"<a:off\b[^>]*>" body) "")
-        ext (or (re-find #"<a:ext\b[^>]*>" body) "")]
-    {:drawingml/x (emu->inch (xml-attr off "x") 0.8)
-     :drawingml/y (emu->inch (xml-attr off "y") 0.8)
-     :drawingml/w (emu->inch (xml-attr ext "cx") 8.4)
-     :drawingml/h (emu->inch (xml-attr ext "cy") 0.7)}))
+(def default-xfrm {:drawingml/x 0.8 :drawingml/y 0.8 :drawingml/w 8.4 :drawingml/h 0.7})
 
-(defn first-color [xml]
-  (some-> (or (second (re-find #"<a:srgbClr\b[^>]*\bval=\"([0-9A-Fa-f]{6})\"" (or xml "")))
-              (second (re-find #"\blastClr=\"([0-9A-Fa-f]{6})\"" (or xml ""))))
-          str/upper-case))
+(defn xfrm-explicit
+  "The shape's own <a:xfrm>/<p:xfrm> geometry, or nil when the block omits it.
+  PowerPoint omits <a:xfrm> on placeholders that were never moved/resized and
+  expects the slide layout/master geometry to apply instead."
+  [block]
+  (when-let [body (second (or (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or block ""))
+                              (re-find #"<p:xfrm\b[^>]*>([\s\S]*?)</p:xfrm>" (or block ""))))]
+    (let [off (or (re-find #"<a:off\b[^>]*>" body) "")
+          ext (or (re-find #"<a:ext\b[^>]*>" body) "")]
+      {:drawingml/x (emu->inch (xml-attr off "x") 0.8)
+       :drawingml/y (emu->inch (xml-attr off "y") 0.8)
+       :drawingml/w (emu->inch (xml-attr ext "cx") 8.4)
+       :drawingml/h (emu->inch (xml-attr ext "cy") 0.7)})))
 
-(defn solid-fill [block]
-  (some-> (second (re-find #"<a:solidFill\b[^>]*>([\s\S]*?)</a:solidFill>" (or block "")))
-          first-color))
+(defn placeholder-geometry-index
+  "Indexes placeholder geometry from a slideLayout/slideMaster XML string,
+  keyed by [idx type] (exact placeholder match) and [nil type] (type-only
+  fallback, first match wins). Feeds `xfrm`'s :placeholder-geometry opt so a
+  slide shape that omits <a:xfrm> can inherit its layout/master position."
+  [xml]
+  (reduce (fn [index block]
+            (if-let [ph (placeholder block)]
+              (if-let [geometry (xfrm-explicit block)]
+                (let [type (:type ph "body")]
+                  (cond-> index
+                    (and (:idx ph) (not (contains? index [(:idx ph) type])))
+                    (assoc [(:idx ph) type] geometry)
 
-(defn line-fill [block]
-  (some-> (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))
-          first-color))
+                    (not (contains? index [nil type]))
+                    (assoc [nil type] geometry)))
+                index)
+              index))
+          {}
+          (xml-elements xml "p:sp")))
+
+(defn merge-placeholder-geometry-indexes
+  "Merges slideLayout and slideMaster placeholder geometry indexes, preferring
+  the (more specific) layout entries."
+  [layout-index master-index]
+  (merge master-index layout-index))
+
+;; The OOXML default colour map (no explicit <p:clrMap> override): bg1/tx1/
+;; bg2/tx2 are the placeholder-facing aliases PowerPoint actually emits in
+;; <a:schemeClr val="...">, resolved here to the theme's dk/lt slots.
+(def ^:private default-color-map
+  {:bg1 :lt1 :tx1 :dk1 :bg2 :lt2 :tx2 :dk2})
+
+(defn scheme-color-role [xml]
+  (some-> (second (re-find #"<a:schemeClr\b[^>]*\bval=\"([A-Za-z0-9]+)\"" (or xml "")))
+          str/lower-case
+          keyword
+          ((fn [role] (get default-color-map role role)))))
+
+(defn first-color
+  ([xml] (first-color xml nil))
+  ([xml theme-colors]
+   (or (some-> (or (second (re-find #"<a:srgbClr\b[^>]*\bval=\"([0-9A-Fa-f]{6})\"" (or xml "")))
+                   (second (re-find #"\blastClr=\"([0-9A-Fa-f]{6})\"" (or xml ""))))
+               str/upper-case)
+       (get theme-colors (scheme-color-role xml)))))
+
+(defn solid-fill
+  ([block] (solid-fill block nil))
+  ([block theme-colors]
+   (some-> (second (re-find #"<a:solidFill\b[^>]*>([\s\S]*?)</a:solidFill>" (or block "")))
+           (first-color theme-colors))))
+
+(defn line-fill
+  ([block] (line-fill block nil))
+  ([block theme-colors]
+   (some-> (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))
+           (first-color theme-colors))))
+
+(defn xfrm
+  "Shape geometry: explicit <a:xfrm> when present, else placeholder geometry
+  inherited via opts' :placeholder-geometry index (built by
+  `placeholder-geometry-index`/`merge-placeholder-geometry-indexes` from the
+  slide's layout+master), else the historical fixed fallback."
+  ([block] (xfrm block {}))
+  ([block opts]
+   (or (xfrm-explicit block)
+       (when-let [ph (placeholder block)]
+         (let [index (:placeholder-geometry opts)
+               type (:type ph "body")]
+           (or (get index [(:idx ph) type])
+               (get index [nil type]))))
+       default-xfrm)))
 
 (defn font-size [block fallback]
   (if-let [sz (some-> (re-find #"<a:rPr\b[^>]*>" (or block "")) (xml-attr "sz") parse-double-safe)]
@@ -123,49 +189,57 @@
           (xml-attr "prst")
           keyword))
 
-(defn text-shape [idx block]
-  (let [texts (vec (xml-texts block "a:t"))
-        text (str/join "\n" texts)]
-    (when-not (str/blank? text)
-      (cond-> (add-placeholder
-               (merge {:drawingml/id (shape-name block idx "text")
-                       :drawingml/kind :text
-                       :drawingml/text text
-                       :drawingml/font-size (font-size block 20)
-                       :drawingml/color (or (solid-fill block) "17202A")}
-                      (xfrm block))
-               block)
-        (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs)))))
+(defn text-shape
+  ([idx block] (text-shape idx block {}))
+  ([idx block opts]
+   (let [texts (vec (xml-texts block "a:t"))
+         text (str/join "\n" texts)]
+     (when-not (str/blank? text)
+       (cond-> (add-placeholder
+                (merge {:drawingml/id (shape-name block idx "text")
+                        :drawingml/kind :text
+                        :drawingml/text text
+                        :drawingml/font-size (font-size block 20)
+                        :drawingml/color (or (solid-fill block (:theme-colors opts)) "17202A")}
+                       (xfrm block opts))
+                block)
+         (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs))))))
 
-(defn rect-shape [idx block]
-  (when (= :rect (geometry block))
-    (cond-> (add-placeholder
-             (merge {:drawingml/id (shape-name block idx "rect")
-                     :drawingml/kind :rect
-                     :drawingml/fill (or (solid-fill block) "EAF0F8")}
-                    (xfrm block))
-             block)
-      (line-fill block) (assoc :drawingml/line (line-fill block)))))
+(defn rect-shape
+  ([idx block] (rect-shape idx block {}))
+  ([idx block opts]
+   (when (= :rect (geometry block))
+     (cond-> (add-placeholder
+              (merge {:drawingml/id (shape-name block idx "rect")
+                      :drawingml/kind :rect
+                      :drawingml/fill (or (solid-fill block (:theme-colors opts)) "EAF0F8")}
+                     (xfrm block opts))
+              block)
+       (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))))))
 
-(defn pic-shape [idx block]
-  (merge {:drawingml/id (shape-name block idx "pic")
-          :drawingml/kind :pic
-          :drawingml/text (shape-name block idx "Picture")
-          :drawingml/source-kind :drawingml/pic
-          :drawingml/font-size 12
-          :drawingml/color "334155"}
-         (xfrm block)))
+(defn pic-shape
+  ([idx block] (pic-shape idx block {}))
+  ([idx block opts]
+   (merge {:drawingml/id (shape-name block idx "pic")
+           :drawingml/kind :pic
+           :drawingml/text (shape-name block idx "Picture")
+           :drawingml/source-kind :drawingml/pic
+           :drawingml/font-size 12
+           :drawingml/color "334155"}
+          (xfrm block opts))))
 
-(defn table-shape [idx block]
-  (let [texts (vec (xml-texts block "a:t"))]
-    (when (seq texts)
-      (merge {:drawingml/id (shape-name block idx "table")
-              :drawingml/kind :table
-              :drawingml/text (str/join "\n" texts)
-              :drawingml/source-kind :drawingml/table
-              :drawingml/font-size 14
-              :drawingml/color "17202A"}
-             (xfrm block)))))
+(defn table-shape
+  ([idx block] (table-shape idx block {}))
+  ([idx block opts]
+   (let [texts (vec (xml-texts block "a:t"))]
+     (when (seq texts)
+       (merge {:drawingml/id (shape-name block idx "table")
+               :drawingml/kind :table
+               :drawingml/text (str/join "\n" texts)
+               :drawingml/source-kind :drawingml/table
+               :drawingml/font-size 14
+               :drawingml/color "17202A"}
+              (xfrm block opts))))))
 
 (defn chart-shape
   ([idx block] (chart-shape idx block {}))
@@ -179,7 +253,7 @@
                        :drawingml/source-kind :drawingml/chart
                        :drawingml/font-size 12
                        :drawingml/color "334155"}
-                      (xfrm block))
+                      (xfrm block opts))
          rel-id (assoc :drawingml/chart-rel-id rel-id)
          (:target-path rel) (assoc :drawingml/chart-part (:target-path rel))
          (:workbook-path rel) (assoc :drawingml/workbook-part (:workbook-path rel)))))))
@@ -187,7 +261,7 @@
 (defn graphic-frame-shape
   ([idx block] (graphic-frame-shape idx block {}))
   ([idx block opts]
-   (or (table-shape idx block)
+   (or (table-shape idx block opts)
        (chart-shape idx block opts))))
 
 (defn fallback-text-shapes [texts]
@@ -213,13 +287,13 @@
         graphic-frame-blocks (vec (xml-elements xml "p:graphicFrame"))
         table-blocks (vec (xml-elements xml "a:tbl"))
         parsed-shapes (vec (keep-indexed (fn [shape-idx block]
-                                           (some-> (or (text-shape shape-idx block)
-                                                       (rect-shape shape-idx block))
+                                           (some-> (or (text-shape shape-idx block opts)
+                                                       (rect-shape shape-idx block opts))
                                                    (add-group (group-metadata groups block))
                                                    (with-source opts :p/sp shape-idx)))
                                          shape-blocks))
         pics (vec (map-indexed (fn [idx block]
-                                  (-> (pic-shape idx block)
+                                  (-> (pic-shape idx block opts)
                                       (add-group (group-metadata groups block))
                                       (with-source opts :p/pic idx)))
                                 (xml-elements xml "p:pic")))
@@ -231,7 +305,7 @@
         standalone-tables (vec (keep-indexed
                                 (fn [idx block]
                                   (when-not (some #(str/includes? % block) graphic-frame-blocks)
-                                    (some-> (table-shape idx block)
+                                    (some-> (table-shape idx block opts)
                                             (with-source opts :a/tbl idx))))
                                 table-blocks))
         parsed (vec (concat parsed-shapes pics graphic-frames standalone-tables))]
