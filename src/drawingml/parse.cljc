@@ -4,8 +4,26 @@
 
 (def emu-per-inch 914400)
 
+(defn- parse-int-radix [s radix]
+  #?(:clj (Integer/parseInt s radix)
+     :cljs (js/parseInt s radix)))
+
+(defn- codepoint-string [n]
+  #?(:clj (String. (Character/toChars n))
+     :cljs (.fromCodePoint js/String n)))
+
+(defn- decode-numeric-entity
+  "&#8226;/&#x2022; -> the literal character. Bullet characters (buChar) are
+  routinely XML-escaped as numeric entities rather than the raw glyph."
+  [[raw hex dec]]
+  (try
+    (codepoint-string (if hex (parse-int-radix hex 16) (parse-int-radix dec 10)))
+    (catch #?(:clj Exception :cljs :default) _
+      raw)))
+
 (defn xml-unescape [s]
   (-> (str (or s ""))
+      (str/replace #"&#x([0-9A-Fa-f]+);|&#([0-9]+);" decode-numeric-entity)
       (str/replace "&lt;" "<")
       (str/replace "&gt;" ">")
       (str/replace "&quot;" "\"")
@@ -217,6 +235,63 @@
       (str/join "\n" (map paragraph-text paragraphs))
       (str/join "\n" (xml-texts block "a:t")))))
 
+(defn- paragraph-pPr
+  "A paragraph's own <a:pPr> element (open+children+close, or self-closing),
+  or nil. algn lives as an attribute on the tag itself; bullet/line-spacing
+  live as child elements -- both need the full tag text, not just the inner
+  content, hence returning the whole match rather than a captured group."
+  [p-block]
+  (or (re-find #"<a:pPr\b[^>]*>[\s\S]*?</a:pPr>" (or p-block ""))
+      (re-find #"<a:pPr\b[^>]*/>" (or p-block ""))))
+
+(defn- paragraph-align [pPr]
+  (when pPr
+    (case (xml-attr pPr "algn")
+      "ctr" :center
+      "r" :right
+      "just" :justify
+      "l" :left
+      nil)))
+
+(defn- paragraph-bullet [pPr]
+  (when pPr
+    (cond
+      (re-find #"<a:buNone\b" pPr) {:type :none}
+      :else (or (when-let [ch (second (re-find #"<a:buChar\b[^>]*\bchar=\"([^\"]*)\"" pPr))]
+                  {:type :char :char (xml-unescape ch)})
+                (when-let [scheme (second (re-find #"<a:buAutoNum\b[^>]*\btype=\"([^\"]*)\"" pPr))]
+                  {:type :auto-num :scheme scheme})))))
+
+(defn- paragraph-line-spacing
+  "A paragraph's line spacing as a multiplier (1.0 = single spacing), from
+  <a:lnSpc><a:spcPct val=\"150000\"/></a:lnSpc> (val is a percentage x1000).
+  <a:spcPts> (an absolute point size, not a multiplier) isn't convertible to
+  a multiplier without knowing the run's font size, so it's left unread for
+  now rather than guessed at."
+  [pPr]
+  (when pPr
+    (some-> (second (re-find #"<a:lnSpc>\s*<a:spcPct\b[^>]*\bval=\"([0-9]+)\"" pPr))
+            parse-double-safe
+            (/ 100000.0))))
+
+(defn paragraphs
+  "Structured per-paragraph extraction (text + alignment + bullet + line-
+  spacing), alongside (not replacing) the flattened text `paragraphs-text`
+  produces. Lets a writer reconstruct real bullets/alignment/spacing instead
+  of always emitting plain, unstyled lines -- the single biggest visible gap
+  versus a real PowerPoint-authored deck (bulleted lists are near-universal)."
+  [block]
+  (vec
+   (for [p-block (xml-elements block "a:p")
+         :let [pPr (paragraph-pPr p-block)
+               align (paragraph-align pPr)
+               bullet (paragraph-bullet pPr)
+               line-spacing (paragraph-line-spacing pPr)]]
+     (cond-> {:text (paragraph-text p-block)}
+       align (assoc :align align)
+       bullet (assoc :bullet bullet)
+       line-spacing (assoc :line-spacing line-spacing)))))
+
 (defn table-rows
   "The table's cell grid as rows of paragraph-aware cell text, reading <a:tr>
   then <a:tc> in document order. Empty when the block has no rows."
@@ -233,7 +308,8 @@
   ([idx block] (text-shape idx block {}))
   ([idx block opts]
    (let [texts (vec (xml-texts block "a:t"))
-         text (paragraphs-text block)]
+         text (paragraphs-text block)
+         paras (paragraphs block)]
      (when-not (str/blank? text)
        (cond-> (add-placeholder
                 (merge {:drawingml/id (shape-name block idx "text")
@@ -243,7 +319,8 @@
                         :drawingml/color (or (text-color block (:theme-colors opts)) "17202A")}
                        (xfrm block opts))
                 block)
-         (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs))))))
+         (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs)
+         (seq paras) (assoc :drawingml/paragraphs paras))))))
 
 (defn rect-shape
   ([idx block] (rect-shape idx block {}))

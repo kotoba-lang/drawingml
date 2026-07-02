@@ -48,6 +48,35 @@
   (testing "separate <a:p> paragraphs still become separate lines"
     (is (= "Line one\nLine two" (:drawingml/text (dml/text-shape 0 multi-paragraph-sp))))))
 
+(def bulleted-paragraphs-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody>
+     <a:p><a:pPr algn=\"ctr\"><a:lnSpc><a:spcPct val=\"150000\"/></a:lnSpc><a:buChar char=\"&#8226;\"/></a:pPr>
+       <a:r><a:t>First bullet</a:t></a:r></a:p>
+     <a:p><a:pPr><a:buAutoNum type=\"arabicPeriod\"/></a:pPr>
+       <a:r><a:t>Numbered item</a:t></a:r></a:p>
+     <a:p><a:pPr><a:buNone/></a:pPr>
+       <a:r><a:t>No bullet</a:t></a:r></a:p>
+     <a:p><a:r><a:t>Default paragraph</a:t></a:r></a:p>
+   </p:txBody>
+   </p:sp>")
+
+(deftest structured-paragraph-extraction-test
+  (let [shape (dml/text-shape 0 bulleted-paragraphs-sp)
+        paras (:drawingml/paragraphs shape)]
+    (testing "flattened :drawingml/text is unaffected (still one line per paragraph)"
+      (is (= "First bullet\nNumbered item\nNo bullet\nDefault paragraph" (:drawingml/text shape))))
+    (testing "alignment, line-spacing, and a literal bullet character are captured"
+      (is (= :center (:align (nth paras 0))))
+      (is (= 1.5 (:line-spacing (nth paras 0))))
+      (is (= {:type :char :char "•"} (:bullet (nth paras 0)))))
+    (testing "auto-numbered bullets capture their numbering scheme"
+      (is (= {:type :auto-num :scheme "arabicPeriod"} (:bullet (nth paras 1)))))
+    (testing "an explicit <a:buNone/> is distinguished from \"no bullet info at all\""
+      (is (= {:type :none} (:bullet (nth paras 2)))))
+    (testing "a paragraph with no <a:pPr> at all carries no align/bullet/line-spacing keys"
+      (is (= {:text "Default paragraph"} (nth paras 3))))))
+
 (def table-block
   "<a:tbl>
     <a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc>
