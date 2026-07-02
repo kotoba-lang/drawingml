@@ -762,13 +762,16 @@
 
 (defn table-cell-borders
   "A cell's own border sides (<a:tcPr>'s <a:lnL>/<a:lnR>/<a:lnT>/<a:lnB>,
-  each an <a:ln>-shaped element), as {:left {...} :right {...} :top {...}
-  :bottom {...}} (each side {:width pt :color hex}, only the sides
-  actually present) or nil for a cell with no border overrides at all
-  (the common case -- PowerPoint's own table-style default borders apply).
-  Previously unread anywhere -- a table with per-cell border customization
-  (e.g. a heavier top border on a header row, a real-deck pattern) always
-  round-tripped losing that override entirely."
+  plus the two diagonal sides <a:lnTlToBr>/<a:lnBlToRt> -- a corner-to-
+  corner rule some real decks use to strike out or visually split a cell),
+  each an <a:ln>-shaped element, as {:left {...} :right {...} :top {...}
+  :bottom {...} :diagonal-down {...} :diagonal-up {...}} (each side
+  {:width pt :color hex}, only the sides actually present) or nil for a
+  cell with no border overrides at all (the common case -- PowerPoint's
+  own table-style default borders apply). Previously unread anywhere --
+  a table with per-cell border customization (e.g. a heavier top border
+  on a header row, a real-deck pattern) always round-tripped losing that
+  override entirely."
   [cell-block theme-colors]
   (when-let [tcPr (second (re-find #"<a:tcPr\b[^>]*>([\s\S]*?)</a:tcPr>" (or cell-block "")))]
     (not-empty
@@ -776,23 +779,51 @@
        (table-cell-border-side tcPr "lnL" theme-colors) (assoc :left (table-cell-border-side tcPr "lnL" theme-colors))
        (table-cell-border-side tcPr "lnR" theme-colors) (assoc :right (table-cell-border-side tcPr "lnR" theme-colors))
        (table-cell-border-side tcPr "lnT" theme-colors) (assoc :top (table-cell-border-side tcPr "lnT" theme-colors))
-       (table-cell-border-side tcPr "lnB" theme-colors) (assoc :bottom (table-cell-border-side tcPr "lnB" theme-colors))))))
+       (table-cell-border-side tcPr "lnB" theme-colors) (assoc :bottom (table-cell-border-side tcPr "lnB" theme-colors))
+       (table-cell-border-side tcPr "lnTlToBr" theme-colors) (assoc :diagonal-down (table-cell-border-side tcPr "lnTlToBr" theme-colors))
+       (table-cell-border-side tcPr "lnBlToRt" theme-colors) (assoc :diagonal-up (table-cell-border-side tcPr "lnBlToRt" theme-colors))))))
+
+(defn table-cell-margins-and-anchor
+  "A cell's own <a:tcPr> margin/anchor attributes (marL/marR/marT/marB in
+  EMU -> inches, anchor -> :top/:center/:bottom vertical text alignment),
+  as {:margin-left/:margin-right/:margin-top/:margin-bottom in :anchor}
+  with only the attributes actually present -- matches on <a:tcPr>'s own
+  OPENING tag text so a SELF-CLOSING <a:tcPr .../> (a cell with margin/
+  anchor overrides but no border/fill children) is captured too, unlike
+  table-cell-borders/table-cell-fill which need a paired tag's inner body
+  and so only ever see the paired form. nil for a cell with no margin/
+  anchor overrides at all, the overwhelming common case (PowerPoint's own
+  default margins and top-anchored text apply). Previously unread
+  anywhere -- a vertically-centered or custom-margin cell (common in
+  real decks) always round-tripped as if using PowerPoint's own defaults."
+  [cell-block]
+  (when-let [tcpr-open (re-find #"<a:tcPr\b[^>]*>" (or cell-block ""))]
+    (let [margin (fn [attr] (some-> (xml-attr tcpr-open attr) parse-double-safe (/ emu-per-inch)))
+          anchor (case (xml-attr tcpr-open "anchor") "t" :top "ctr" :center "b" :bottom nil)]
+      (not-empty
+       (cond-> {}
+         (margin "marL") (assoc :margin-left (margin "marL"))
+         (margin "marR") (assoc :margin-right (margin "marR"))
+         (margin "marT") (assoc :margin-top (margin "marT"))
+         (margin "marB") (assoc :margin-bottom (margin "marB"))
+         anchor (assoc :anchor anchor))))))
 
 (defn table-cells
   "The table's cell grid, one entry per <a:tc> in document order, each
   either:
   - a plain string (the common case: no merge, no per-cell fill/borders)
-  - {:text ... :col-span N :row-span N :fill \"hex\" :borders {...}} for
-    the ANCHOR cell of a merge and/or a cell with its own background
-    fill/border override
+  - {:text ... :col-span N :row-span N :fill \"hex\" :borders {...}
+    :margin-left/:margin-right/:margin-top/:margin-bottom in :anchor
+    :top/:center/:bottom} for the ANCHOR cell of a merge and/or a cell
+    with its own background fill/border/margin/anchor override
   - :h-merge/:v-merge/:hv-merge for a grid position covered by a preceding
     cell's merge (OOXML still emits a <a:tc> there, hMerge=\"1\"/
     vMerge=\"1\"/both, but it carries no content of its own).
   Previously table-rows collapsed EVERY cell to its flattened paragraph
   text regardless of merge/style -- a merged header row (a very common
   real-deck pattern) silently duplicated its text into cells that should
-  have been empty merge continuations, and any per-cell background color
-  or border override was dropped entirely."
+  have been empty merge continuations, and any per-cell background color,
+  border, margin, or vertical-anchor override was dropped entirely."
   ([block] (table-cells block nil))
   ([block theme-colors]
    (vec (for [row (xml-elements block "a:tr")]
@@ -806,9 +837,10 @@
                      (let [text (paragraphs-text cell)
                            fill (table-cell-fill cell theme-colors)
                            borders (table-cell-borders cell theme-colors)
+                           margins-anchor (table-cell-margins-and-anchor cell)
                            span? (or (and col-span (> col-span 1)) (and row-span (> row-span 1)))]
-                       (if (or span? fill borders)
-                         (cond-> {:text text}
+                       (if (or span? fill borders margins-anchor)
+                         (cond-> (merge {:text text} margins-anchor)
                            (and col-span (> col-span 1)) (assoc :col-span col-span)
                            (and row-span (> row-span 1)) (assoc :row-span row-span)
                            fill (assoc :fill fill)
