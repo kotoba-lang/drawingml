@@ -605,6 +605,56 @@
           (xml-attr "prst")
           keyword))
 
+(def ^:private path-command-pattern
+  #"<a:(moveTo|lnTo|cubicBezTo|quadBezTo)\b[^>]*>([\s\S]*?)</a:\1>|<a:(arcTo|close)\b[^>]*/?>")
+
+(defn- path-command-pts [cmd-body]
+  (mapv (fn [pt] {:x (some-> (xml-attr pt "x") parse-double-safe)
+                  :y (some-> (xml-attr pt "y") parse-double-safe)})
+        (re-seq #"<a:pt\b[^>]*/?>" (or cmd-body ""))))
+
+(defn- path-commands
+  "Every drawing command in a <a:path>'s body, in document order (order
+  matters -- these build a single continuous path). moveTo/lnTo/
+  cubicBezTo/quadBezTo carry their <a:pt> points verbatim; arcTo carries
+  its own wR/hR/stAng/swAng attributes; close carries nothing."
+  [path-body]
+  (vec (for [[whole paired-name paired-body self-name] (re-seq path-command-pattern (or path-body ""))]
+         (let [cmd-name (or paired-name self-name)]
+           (case cmd-name
+             "close" {:cmd :close}
+             "arcTo" {:cmd :arcTo
+                      :w-radius (some-> (xml-attr whole "wR") parse-double-safe)
+                      :h-radius (some-> (xml-attr whole "hR") parse-double-safe)
+                      :start-angle (some-> (xml-attr whole "stAng") parse-double-safe)
+                      :swing-angle (some-> (xml-attr whole "swAng") parse-double-safe)}
+             {:cmd (keyword cmd-name) :pts (path-command-pts paired-body)})))))
+
+(defn custom-geometry
+  "A shape's own <a:custGeom> path data (mutually exclusive with
+  <a:prstGeom> in OOXML -- a shape has one or the other), as a vector of
+  {:width N :height N :fill-rule \"...\" :commands [...]} maps (one per
+  <a:path> -- a compound geometry, e.g. a shape with a hole, can have more
+  than one). Raw coordinates stay in the path's own local unit space (NOT
+  EMU/inches) and are preserved verbatim rather than reinterpreted --
+  faithfully round-tripping the exact source path beats attempting to
+  render/re-derive it, which this package has no vector rasterizer for
+  anyway. nil when the shape has no <a:custGeom> at all (the overwhelming
+  common case -- prstGeom presets). Previously entirely unhandled: a
+  custom-path shape had NO geometry captured at all and, since rect-shape's
+  own gate required a recognized preset, was silently dropped on import."
+  [block]
+  (when-let [cust (second (re-find #"<a:custGeom\b[^>]*>([\s\S]*?)</a:custGeom>" (or block "")))]
+    (let [path-lst (second (re-find #"<a:pathLst\b[^>]*>([\s\S]*?)</a:pathLst>" cust))]
+      (not-empty
+       (vec (for [path-block (xml-elements (or path-lst "") "a:path")
+                  :let [open-tag (or (re-find #"<a:path\b[^>]*>" path-block) "")
+                        body (second (re-find #"<a:path\b[^>]*>([\s\S]*?)</a:path>" path-block))]]
+              (cond-> {:width (some-> (xml-attr open-tag "w") parse-double-safe)
+                       :height (some-> (xml-attr open-tag "h") parse-double-safe)
+                       :commands (path-commands body)}
+                (xml-attr open-tag "fill") (assoc :fill-rule (xml-attr open-tag "fill")))))))))
+
 (defn shape-adjustments
   "A shape's own <a:prstGeom>'s adjustment handle values (<a:avLst><a:gd
   name=\"...\" fmla=\"...\"/>...</a:avLst>), as a vector of {:name ... :fmla
@@ -668,33 +718,38 @@
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
-         (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts))))))))
+         (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
+         (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block)))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
-  <a:prstGeom> (rect, roundRect, ellipse, arrows, stars, ...), not just an
-  exact prst=\"rect\" -- a non-rect shape with no text used to be dropped
-  entirely (invisible on import) since only this exact-rect check ever
-  produced a shape for text-less blocks. The actual preset is carried as
+  <a:prstGeom> (rect, roundRect, ellipse, arrows, stars, ...) OR a custom-
+  path <a:custGeom> (:drawingml/geometry :custom, its raw path data in
+  :drawingml/custom-geometry) -- previously a custGeom shape (mutually
+  exclusive with prstGeom, so this gate alone required a recognized preset)
+  was silently dropped entirely on import. The actual preset is carried as
   :drawingml/geometry so a writer can reproduce the real outline instead of
   always drawing a plain rectangle."
   ([idx block] (rect-shape idx block {}))
   ([idx block opts]
-   (when-let [geom (geometry block)]
-     (cond-> (add-placeholder
-              (merge {:drawingml/id (shape-name block idx "rect")
-                      :drawingml/kind :rect
-                      :drawingml/geometry geom
-                      :drawingml/fill (or (solid-fill block (:theme-colors opts)) "EAF0F8")}
-                     (xfrm block opts))
-              block)
-       (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))
-       (line-dash block) (assoc :drawingml/line-dash (line-dash block))
-       (line-width block) (assoc :drawingml/line-width (line-width block))
-       (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
-       (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
-       (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
-       (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))))))
+   (let [geom (geometry block)
+         custom (custom-geometry block)]
+     (when (or geom custom)
+       (cond-> (add-placeholder
+                (merge {:drawingml/id (shape-name block idx "rect")
+                        :drawingml/kind :rect
+                        :drawingml/geometry (or geom :custom)
+                        :drawingml/fill (or (solid-fill block (:theme-colors opts)) "EAF0F8")}
+                       (xfrm block opts))
+                block)
+         (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))
+         (line-dash block) (assoc :drawingml/line-dash (line-dash block))
+         (line-width block) (assoc :drawingml/line-width (line-width block))
+         (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
+         (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
+         (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
+         (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
+         custom (assoc :drawingml/custom-geometry custom))))))
 
 (defn pic-blip-rel-id
   "A <p:pic>'s own image, <a:blipFill><a:blip r:embed=\"...\"/>. Previously
