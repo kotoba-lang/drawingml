@@ -1,6 +1,7 @@
 (ns drawingml.parse
   "Small DrawingML XML to EDN projection helpers."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xml.parse :as xp]))
 
 (def emu-per-inch 914400)
 
@@ -605,30 +606,26 @@
           (xml-attr "prst")
           keyword))
 
-(def ^:private path-command-pattern
-  #"<a:(moveTo|lnTo|cubicBezTo|quadBezTo)\b[^>]*>([\s\S]*?)</a:\1>|<a:(arcTo|close)\b[^>]*/?>")
-
-(defn- path-command-pts [cmd-body]
-  (mapv (fn [pt] {:x (some-> (xml-attr pt "x") parse-double-safe)
-                  :y (some-> (xml-attr pt "y") parse-double-safe)})
-        (re-seq #"<a:pt\b[^>]*/?>" (or cmd-body ""))))
-
-(defn- path-commands
-  "Every drawing command in a <a:path>'s body, in document order (order
-  matters -- these build a single continuous path). moveTo/lnTo/
-  cubicBezTo/quadBezTo carry their <a:pt> points verbatim; arcTo carries
-  its own wR/hR/stAng/swAng attributes; close carries nothing."
-  [path-body]
-  (vec (for [[whole paired-name paired-body self-name] (re-seq path-command-pattern (or path-body ""))]
-         (let [cmd-name (or paired-name self-name)]
-           (case cmd-name
-             "close" {:cmd :close}
-             "arcTo" {:cmd :arcTo
-                      :w-radius (some-> (xml-attr whole "wR") parse-double-safe)
-                      :h-radius (some-> (xml-attr whole "hR") parse-double-safe)
-                      :start-angle (some-> (xml-attr whole "stAng") parse-double-safe)
-                      :swing-angle (some-> (xml-attr whole "swAng") parse-double-safe)}
-             {:cmd (keyword cmd-name) :pts (path-command-pts paired-body)})))))
+(defn- path-command-from-node
+  "One drawing command node (:a/moveTo/:a/lnTo/:a/cubicBezTo/:a/quadBezTo/
+  :a/arcTo/:a/close, as parsed by xml.parse) into the same {:cmd ...} shape
+  this package has always produced. moveTo/lnTo/cubicBezTo/quadBezTo carry
+  their <a:pt> points verbatim; arcTo carries its own wR/hR/stAng/swAng
+  attributes; close carries nothing."
+  [node]
+  (let [cmd-name (name (xp/el-tag node))]
+    (case cmd-name
+      "close" {:cmd :close}
+      "arcTo" {:cmd :arcTo
+               :w-radius (some-> (xp/el-attr node "wR") parse-double-safe)
+               :h-radius (some-> (xp/el-attr node "hR") parse-double-safe)
+               :start-angle (some-> (xp/el-attr node "stAng") parse-double-safe)
+               :swing-angle (some-> (xp/el-attr node "swAng") parse-double-safe)}
+      {:cmd (keyword cmd-name)
+       :pts (vec (for [pt (xp/el-elements node)
+                       :when (= "pt" (name (xp/el-tag pt)))]
+                   {:x (some-> (xp/el-attr pt "x") parse-double-safe)
+                    :y (some-> (xp/el-attr pt "y") parse-double-safe)}))})))
 
 (defn custom-geometry
   "A shape's own <a:custGeom> path data (mutually exclusive with
@@ -642,18 +639,24 @@
   anyway. nil when the shape has no <a:custGeom> at all (the overwhelming
   common case -- prstGeom presets). Previously entirely unhandled: a
   custom-path shape had NO geometry captured at all and, since rect-shape's
-  own gate required a recognized preset, was silently dropped on import."
+  own gate required a recognized preset, was silently dropped on import.
+
+  Parses the isolated <a:custGeom> substring through xml.parse instead of
+  regex-scanning its command structure directly -- the old regex needed a
+  single alternation pattern to handle moveTo/lnTo/cubicBezTo/quadBezTo
+  (paired tags with <a:pt> children) and arcTo/close (self-closing, plain
+  attributes) uniformly; walking the parsed tree needs no such special
+  casing at all."
   [block]
-  (when-let [cust (second (re-find #"<a:custGeom\b[^>]*>([\s\S]*?)</a:custGeom>" (or block "")))]
-    (let [path-lst (second (re-find #"<a:pathLst\b[^>]*>([\s\S]*?)</a:pathLst>" cust))]
+  (when-let [cust-xml (re-find #"<a:custGeom\b[^>]*>[\s\S]*?</a:custGeom>" (or block ""))]
+    (let [cust-tree (xp/parse cust-xml)
+          paths (xp/find-all cust-tree :a/path)]
       (not-empty
-       (vec (for [path-block (xml-elements (or path-lst "") "a:path")
-                  :let [open-tag (or (re-find #"<a:path\b[^>]*>" path-block) "")
-                        body (second (re-find #"<a:path\b[^>]*>([\s\S]*?)</a:path>" path-block))]]
-              (cond-> {:width (some-> (xml-attr open-tag "w") parse-double-safe)
-                       :height (some-> (xml-attr open-tag "h") parse-double-safe)
-                       :commands (path-commands body)}
-                (xml-attr open-tag "fill") (assoc :fill-rule (xml-attr open-tag "fill")))))))))
+       (vec (for [path paths]
+              (cond-> {:width (some-> (xp/el-attr path "w") parse-double-safe)
+                       :height (some-> (xp/el-attr path "h") parse-double-safe)
+                       :commands (mapv path-command-from-node (xp/el-elements path))}
+                (xp/el-attr path "fill") (assoc :fill-rule (xp/el-attr path "fill")))))))))
 
 (defn shape-adjustments
   "A shape's own <a:prstGeom>'s adjustment handle values (<a:avLst><a:gd
