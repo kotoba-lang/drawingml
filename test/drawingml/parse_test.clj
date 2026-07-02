@@ -77,6 +77,27 @@
     (testing "a paragraph with no <a:pPr> at all carries no align/bullet/line-spacing keys"
       (is (= {:text "Default paragraph"} (nth paras 3))))))
 
+(def nested-bullet-levels-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody>
+     <a:p><a:pPr><a:buChar char=\"&#8226;\"/></a:pPr><a:r><a:t>Top level</a:t></a:r></a:p>
+     <a:p><a:pPr lvl=\"1\"><a:buChar char=\"&#8226;\"/></a:pPr><a:r><a:t>Sub bullet</a:t></a:r></a:p>
+     <a:p><a:pPr lvl=\"2\" marL=\"914400\"><a:buChar char=\"&#8226;\"/></a:pPr><a:r><a:t>Sub-sub, explicit margin</a:t></a:r></a:p>
+   </p:txBody>
+   </p:sp>")
+
+(deftest paragraph-indent-level-test
+  (let [paras (dml/paragraphs nested-bullet-levels-sp)]
+    (testing "no lvl attribute at all -- :level is absent (level 0, the implicit default), not 0 explicitly"
+      (is (not (contains? (nth paras 0) :level))))
+    (testing "lvl=\"1\" is captured as :level 1"
+      (is (= 1 (:level (nth paras 1)))))
+    (testing "lvl + an explicit marL are both captured -- EMU converted to inches"
+      (is (= 2 (:level (nth paras 2))))
+      (is (= 1.0 (:margin-left (nth paras 2)))))
+    (testing "no marL at all -- :margin-left absent (level's own default margin applies, not re-derived here)"
+      (is (not (contains? (nth paras 1) :margin-left))))))
+
 (def table-block
   "<a:tbl>
     <a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc>

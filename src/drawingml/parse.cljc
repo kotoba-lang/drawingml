@@ -555,6 +555,28 @@
             parse-double-safe
             (/ 100000.0))))
 
+(defn- paragraph-level
+  "A paragraph's own outline/indent level, from <a:pPr lvl=\"N\">
+  (0-8, 0-based -- omitted on the tag means level 0, the top level).
+  Previously unread anywhere: a multi-level bulleted list (near-universal
+  in real decks -- sub-bullets under a bullet) collapsed to a single
+  visual level on round-trip, since every paragraph wrote as if it were
+  always level 0."
+  [pPr]
+  (when pPr
+    (some-> (xml-attr pPr "lvl") parse-double-safe long)))
+
+(defn- paragraph-margin-left
+  "A paragraph's own explicit left margin/indent, from <a:pPr marL=\"...\">
+  (EMU), in inches. PowerPoint normally derives this from the paragraph's
+  :level via the layout/master's own list-style defaults, so this is only
+  set when the SOURCE deck overrode it explicitly beyond what :level alone
+  implies -- captured verbatim rather than re-derived, since the level ->
+  default-margin mapping isn't itself modeled here."
+  [pPr]
+  (when pPr
+    (some-> (xml-attr pPr "marL") parse-double-safe (/ emu-per-inch))))
+
 (defn paragraphs
   "Structured per-paragraph extraction (text + alignment + bullet + line-
   spacing), alongside (not replacing) the flattened text `paragraphs-text`
@@ -567,11 +589,15 @@
          :let [pPr (paragraph-pPr p-block)
                align (paragraph-align pPr)
                bullet (paragraph-bullet pPr)
-               line-spacing (paragraph-line-spacing pPr)]]
+               line-spacing (paragraph-line-spacing pPr)
+               level (paragraph-level pPr)
+               margin-left (paragraph-margin-left pPr)]]
      (cond-> {:text (paragraph-text p-block)}
        align (assoc :align align)
        bullet (assoc :bullet bullet)
-       line-spacing (assoc :line-spacing line-spacing)))))
+       line-spacing (assoc :line-spacing line-spacing)
+       level (assoc :level level)
+       margin-left (assoc :margin-left margin-left)))))
 
 (defn table-rows
   "The table's cell grid as rows of paragraph-aware cell text, reading <a:tr>
