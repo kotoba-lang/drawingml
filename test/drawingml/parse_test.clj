@@ -394,6 +394,39 @@
       (is (nil? (dml/shape-shadow plain-sp nil)))
       (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/shadow))))))
 
+(def full-body-pr-sp
+  (str "<p:sp><p:spPr></p:spPr>"
+       "<p:txBody><a:bodyPr wrap=\"none\" anchor=\"ctr\" anchorCtr=\"1\" "
+       "lIns=\"45720\" tIns=\"22860\" rIns=\"45720\" bIns=\"22860\">"
+       "<a:normAutofit fontScale=\"90000\" lnSpcReduction=\"10000\"/></a:bodyPr>"
+       "<a:lstStyle/><a:p><a:r><a:t>Autofit text</a:t></a:r></a:p></p:txBody></p:sp>"))
+
+(def resize-shape-body-pr-sp
+  (str "<p:sp><p:spPr></p:spPr>"
+       "<p:txBody><a:bodyPr><a:spAutoFit/></a:bodyPr>"
+       "<a:lstStyle/><a:p><a:r><a:t>Resize to fit</a:t></a:r></a:p></p:txBody></p:sp>"))
+
+(def plain-body-pr-sp
+  (str "<p:sp><p:spPr></p:spPr>"
+       "<p:txBody><a:bodyPr wrap=\"square\"/>"
+       "<a:lstStyle/><a:p><a:r><a:t>Plain</a:t></a:r></a:p></p:txBody></p:sp>"))
+
+(deftest text-body-props-test
+  (testing "wrap/anchor/anchorCtr/margins/normAutofit are all read"
+    (is (= {:wrap :none :anchor :center :anchor-center true
+            :margin-left 0.05 :margin-top 0.025 :margin-right 0.05 :margin-bottom 0.025
+            :autofit :shrink :font-scale 90.0 :line-spacing-reduction 10.0}
+           (dml/text-body-props full-body-pr-sp))))
+  (testing "spAutoFit (resize-shape-to-fit) is distinguished from normAutofit (shrink-text)"
+    (is (= {:autofit :resize-shape} (dml/text-body-props resize-shape-body-pr-sp))))
+  (testing "only NON-default values are captured -- wrap=\"square\" (the default) yields no :wrap key at all"
+    (is (nil? (dml/text-body-props plain-body-pr-sp))))
+  (testing "no <a:bodyPr> at all -- nil"
+    (is (nil? (dml/text-body-props "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>x</a:t></a:r></a:p></p:txBody></p:sp>"))))
+  (testing "wired into text-shape as :drawingml/body-props"
+    (is (= :shrink (:autofit (:drawingml/body-props (dml/text-shape 0 full-body-pr-sp)))))
+    (is (not (contains? (dml/text-shape 0 plain-body-pr-sp) :drawingml/body-props)))))
+
 (def image-pic-sp
   "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
      <p:blipFill><a:blip r:embed=\"rId4\"/></p:blipFill>
