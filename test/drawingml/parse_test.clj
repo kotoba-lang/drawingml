@@ -581,6 +581,24 @@
       (is (= "rId4" (:drawingml/image-rel-id shape)))
       (is (not (contains? shape :drawingml/image-part))))))
 
+(def cropped-pic-sp
+  "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
+     <p:blipFill><a:blip r:embed=\"rId4\"/><a:srcRect l=\"10000\" t=\"5000\" r=\"10000\" b=\"0\"/></p:blipFill>
+     <p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr>
+   </p:pic>")
+
+(deftest picture-crop-test
+  (testing "each non-zero side of <a:srcRect> is captured as a plain percentage (source XML is in thousandths-of-a-percent)"
+    (is (= {:left 10.0 :top 5.0 :right 10.0} (dml/picture-crop cropped-pic-sp))))
+  (testing "wired into pic-shape as :drawingml/crop"
+    (is (= {:left 10.0 :top 5.0 :right 10.0} (:drawingml/crop (dml/pic-shape 0 cropped-pic-sp)))))
+  (testing "no <a:srcRect> at all -- nil, the overwhelming common case"
+    (is (nil? (dml/picture-crop image-pic-sp)))
+    (is (not (contains? (dml/pic-shape 0 image-pic-sp) :drawingml/crop))))
+  (testing "a picture-filled shape's own srcRect is ALSO captured (shared blipFill path with <p:pic>)"
+    (let [cropped-fill-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:blipFill><a:blip r:embed=\"rId5\"/><a:srcRect l=\"25000\" r=\"25000\"/></a:blipFill></p:spPr></p:sp>"]
+      (is (= {:left 25.0 :right 25.0} (:drawingml/crop (dml/rect-shape 0 cropped-fill-sp)))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>

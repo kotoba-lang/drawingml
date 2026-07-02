@@ -358,6 +358,29 @@
   (when-let [rel-id (blip-fill-rel-id block)]
     (get-in opts [:rels rel-id :target-path])))
 
+(defn picture-crop
+  "A picture's own crop, <a:blipFill><a:srcRect l=\"..\" t=\"..\" r=\"..\"
+  b=\"..\"/> (each side a percentage of the source image, in thousandths-
+  of-a-percent like this package's other percent-based OOXML fields), as
+  {:left/:top/:right/:bottom pct} with only non-zero sides present. Shared
+  by both <p:pic> (the whole shape is a picture) and shapes whose own FILL
+  is a picture (<a:blipFill> inside <p:spPr>) -- <a:srcRect> means the
+  same thing in either context, so a single regex search over the whole
+  shape block works for both without needing to know which case it is.
+  Previously entirely unhandled -- a cropped picture round-tripped as if
+  uncropped, silently showing the FULL original image instead of the
+  cropped region. nil when the picture isn't cropped at all, the
+  overwhelming common case."
+  [block]
+  (when-let [src-rect (re-find #"<a:srcRect\b[^>]*/?>" (or block ""))]
+    (let [side (fn [attr] (some-> (xml-attr src-rect attr) parse-double-safe (/ 1000.0)))]
+      (not-empty
+       (cond-> {}
+         (some-> (side "l") pos?) (assoc :left (side "l"))
+         (some-> (side "t") pos?) (assoc :top (side "t"))
+         (some-> (side "r") pos?) (assoc :right (side "r"))
+         (some-> (side "b") pos?) (assoc :bottom (side "b")))))))
+
 (defn solid-fill
   ([block] (solid-fill block nil))
   ([block theme-colors]
@@ -943,6 +966,7 @@
          (line-join block) (assoc :drawingml/line-join (line-join block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
+         (picture-crop block) (assoc :drawingml/crop (picture-crop block))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
          (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
@@ -979,6 +1003,7 @@
          (line-join block) (assoc :drawingml/line-join (line-join block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
+         (picture-crop block) (assoc :drawingml/crop (picture-crop block))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
          (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
@@ -1025,7 +1050,8 @@
        video-rel (assoc :drawingml/video-rel-id video-rel)
        (:target-path (get (:rels opts) video-rel)) (assoc :drawingml/video-part (:target-path (get (:rels opts) video-rel)))
        audio-rel (assoc :drawingml/audio-rel-id audio-rel)
-       (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))))))
+       (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))
+       (picture-crop block) (assoc :drawingml/crop (picture-crop block))))))
 
 (defn table-shape
   ([idx block] (table-shape idx block {}))
