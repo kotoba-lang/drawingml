@@ -112,16 +112,23 @@
 (defn xfrm-explicit
   "The shape's own <a:xfrm>/<p:xfrm> geometry, or nil when the block omits it.
   PowerPoint omits <a:xfrm> on placeholders that were never moved/resized and
-  expects the slide layout/master geometry to apply instead."
+  expects the slide layout/master geometry to apply instead. Rotation (`rot`,
+  60,000ths of a degree) and flip (`flipH`/`flipV`) live as attributes on the
+  xfrm tag itself, alongside off/ext -- previously read nowhere, so a rotated
+  or flipped shape silently imported upright/unflipped."
   [block]
-  (when-let [body (second (or (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or block ""))
-                              (re-find #"<p:xfrm\b[^>]*>([\s\S]*?)</p:xfrm>" (or block ""))))]
+  (when-let [[_ open-tag body] (or (re-find #"(<a:xfrm\b[^>]*>)([\s\S]*?)</a:xfrm>" (or block ""))
+                                   (re-find #"(<p:xfrm\b[^>]*>)([\s\S]*?)</p:xfrm>" (or block "")))]
     (let [off (or (re-find #"<a:off\b[^>]*>" body) "")
-          ext (or (re-find #"<a:ext\b[^>]*>" body) "")]
-      {:drawingml/x (emu->inch (xml-attr off "x") 0.8)
-       :drawingml/y (emu->inch (xml-attr off "y") 0.8)
-       :drawingml/w (emu->inch (xml-attr ext "cx") 8.4)
-       :drawingml/h (emu->inch (xml-attr ext "cy") 0.7)})))
+          ext (or (re-find #"<a:ext\b[^>]*>" body) "")
+          rotation (some-> (xml-attr open-tag "rot") parse-double-safe (/ 60000.0))]
+      (cond-> {:drawingml/x (emu->inch (xml-attr off "x") 0.8)
+               :drawingml/y (emu->inch (xml-attr off "y") 0.8)
+               :drawingml/w (emu->inch (xml-attr ext "cx") 8.4)
+               :drawingml/h (emu->inch (xml-attr ext "cy") 0.7)}
+        rotation (assoc :drawingml/rotation rotation)
+        (= "1" (xml-attr open-tag "flipH")) (assoc :drawingml/flip-h true)
+        (= "1" (xml-attr open-tag "flipV")) (assoc :drawingml/flip-v true)))))
 
 (defn placeholder-geometry-index
   "Indexes placeholder geometry from a slideLayout/slideMaster XML string,

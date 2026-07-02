@@ -170,6 +170,20 @@
                  "<a:gradFill><a:gsLst><a:gs><a:srgbClr val=\"336699\"/></a:gs></a:gsLst></a:gradFill>"
                  "</p:spPr></p:sp>"))))))
 
+(deftest rotation-and-flip-are-read-from-xfrm-test
+  (testing "rot (60,000ths of a degree) converts to plain degrees"
+    (let [geom (dml/xfrm-explicit "<p:sp><p:spPr><a:xfrm rot=\"2700000\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr></p:sp>")]
+      (is (= 45.0 (:drawingml/rotation geom)))))
+  (testing "flipH/flipV are read as booleans"
+    (let [geom (dml/xfrm-explicit "<p:sp><p:spPr><a:xfrm flipH=\"1\" flipV=\"1\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr></p:sp>")]
+      (is (true? (:drawingml/flip-h geom)))
+      (is (true? (:drawingml/flip-v geom)))))
+  (testing "a shape with no rot/flip attributes carries none of those keys"
+    (let [geom (dml/xfrm-explicit "<p:sp><p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr></p:sp>")]
+      (is (not (contains? geom :drawingml/rotation)))
+      (is (not (contains? geom :drawingml/flip-h)))
+      (is (not (contains? geom :drawingml/flip-v))))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))
