@@ -294,6 +294,41 @@
     (is (= "112233"
            (dml/first-color "<a:schemeClr val=\"tx1\"/>" {:dk1 "112233"})))))
 
+(def nested-grouped-shapes-block
+  "A group inside a group: the outer group halves its 4in child space into a
+  2in on-slide box; the INNER group (itself living in the outer's child
+  coordinate space) also halves its 2in child space into a 1in box; the
+  shape sits at (1in,1in)/1in in the inner group's own child space. Both
+  transform levels must compose for the shape to land correctly on the
+  slide -- expected: inner maps (1,1)/1x1 -> (1.5,1.5)/0.5x0.5 (in the
+  outer's child space), then outer maps that -> (0.75,0.75)/0.25x0.25 (slide
+  coordinates)."
+  "<p:spTree>
+    <p:grpSp>
+      <p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"1828800\" cy=\"1828800\"/>
+        <a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"3657600\" cy=\"3657600\"/></a:xfrm></p:grpSpPr>
+      <p:grpSp>
+        <p:grpSpPr><a:xfrm><a:off x=\"914400\" y=\"914400\"/><a:ext cx=\"914400\" cy=\"914400\"/>
+          <a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"1828800\" cy=\"1828800\"/></a:xfrm></p:grpSpPr>
+        <p:sp><p:spPr><a:xfrm><a:off x=\"914400\" y=\"914400\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr>
+          <p:txBody><a:p><a:r><a:t>Nested grouped shape</a:t></a:r></a:p></p:txBody></p:sp>
+      </p:grpSp>
+    </p:grpSp>
+   </p:spTree>")
+
+(deftest nested-group-transform-composition-test
+  (let [found (dml/shapes nested-grouped-shapes-block)
+        shape (first found)]
+    (testing "both the inner AND outer group transforms are composed, not just the immediate parent's"
+      (is (= 0.75 (:drawingml/x shape)))
+      (is (= 0.75 (:drawingml/y shape)))
+      (is (= 0.25 (:drawingml/w shape)))
+      (is (= 0.25 (:drawingml/h shape))))
+    (testing "the shape's :drawingml/group still names its IMMEDIATE (innermost) parent, unchanged from the single-level case"
+      (is (some? (:drawingml/group shape))))
+    (testing "the outer group's own block is no longer truncated at the inner group's close -- both blocks are extracted with correct, non-overlapping-wrong bounds"
+      (is (= 2 (count (#'dml/nested-group-blocks nested-grouped-shapes-block)))))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))
