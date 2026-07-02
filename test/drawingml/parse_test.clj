@@ -64,6 +64,35 @@
       (is (= [["Q1" "10"] ["Q2" "20"]] (:drawingml/rows shape)))
       (is (= "Q1\n10\nQ2\n20" (:drawingml/text shape))))))
 
+(def round-rect-themed-fill-with-text
+  "A roundRect AutoShape (not :rect geometry) with a themed SHAPE fill and a
+  text run that has no explicit color of its own — the shape's own
+  <p:spPr><a:solidFill> must not leak into the run's text color."
+  "<p:sp><p:spPr><a:prstGeom prst=\"roundRect\"/><a:solidFill><a:schemeClr val=\"accent3\"/></a:solidFill></p:spPr>
+   <p:txBody><a:p><a:r><a:t>Label</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(def rect-with-explicit-run-color
+  "A run WITH its own explicit color must still resolve correctly when scoped
+  to txBody."
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"EAF0F8\"/></a:solidFill></p:spPr>
+   <p:txBody><a:p><a:r><a:rPr><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:rPr><a:t>Label</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(deftest text-color-does-not-leak-shape-fill-test
+  (testing "a non-:rect AutoShape's own theme fill is not misattributed as its text color"
+    (let [shape (dml/text-shape 0 round-rect-themed-fill-with-text {:theme-colors {:accent3 "9BC15C"}})]
+      (is (not= "9BC15C" (:drawingml/color shape))
+          "the shape's accent3 FILL must not become the TEXT color")
+      (is (= "17202A" (:drawingml/color shape))
+          "no run-level color was set, so the historical text fallback applies")))
+  (testing "a run's own explicit color still resolves correctly, unaffected by the shape's fill"
+    (let [shape (dml/text-shape 0 rect-with-explicit-run-color {})]
+      (is (= "112233" (:drawingml/color shape)))))
+  (testing "rect-shape's own :drawingml/fill is unaffected — it still reads the shape's spPr fill"
+    (let [shape (dml/rect-shape 0 round-rect-themed-fill-with-text {:theme-colors {:accent3 "9BC15C"}})]
+      (is (nil? shape) "roundRect isn't :rect geometry, so rect-shape doesn't match it at all"))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))

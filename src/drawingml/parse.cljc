@@ -164,6 +164,20 @@
    (some-> (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))
            (first-color theme-colors))))
 
+(defn- text-body [block]
+  (second (or (re-find #"<p:txBody\b[^>]*>([\s\S]*?)</p:txBody>" (or block ""))
+              (re-find #"<a:txBody\b[^>]*>([\s\S]*?)</a:txBody>" (or block "")))))
+
+(defn text-color
+  "A shape's text (run) color, scoped to its <p:txBody>/<a:txBody> only.
+  Unlike `solid-fill` on the whole shape block, this never picks up the
+  shape's own <p:spPr> fill — a non-:rect AutoShape (roundRect, oval, ...)
+  that has both a themed fill and a run without its own explicit color would
+  otherwise have its shape-fill color misattributed as its text color."
+  ([block] (text-color block nil))
+  ([block theme-colors]
+   (some-> (text-body block) (solid-fill theme-colors))))
+
 (defn xfrm
   "Shape geometry: explicit <a:xfrm> when present, else placeholder geometry
   inherited via opts' :placeholder-geometry index (built by
@@ -226,7 +240,7 @@
                         :drawingml/kind :text
                         :drawingml/text text
                         :drawingml/font-size (font-size block 20)
-                        :drawingml/color (or (solid-fill block (:theme-colors opts)) "17202A")}
+                        :drawingml/color (or (text-color block (:theme-colors opts)) "17202A")}
                        (xfrm block opts))
                 block)
          (> (count texts) 1) (assoc :drawingml/source-kind :drawingml/text-runs))))))
