@@ -211,25 +211,46 @@
   [layout-index master-index]
   (merge master-index layout-index))
 
-;; The OOXML default colour map (no explicit <p:clrMap> override): bg1/tx1/
-;; bg2/tx2 are the placeholder-facing aliases PowerPoint actually emits in
-;; <a:schemeClr val="...">, resolved here to the theme's dk/lt slots.
+;; The OOXML default colour map (used when no explicit <p:clrMap> override is
+;; available to the caller): bg1/tx1/bg2/tx2 are the placeholder-facing
+;; aliases PowerPoint actually emits in <a:schemeClr val="...">, resolved
+;; here to the theme's dk/lt slots.
 (def ^:private default-color-map
   {:bg1 :lt1 :tx1 :dk1 :bg2 :lt2 :tx2 :dk2})
 
-(defn scheme-color-role [xml]
+(defn- raw-scheme-color-role
+  "The <a:schemeClr val=\"...\"/> value as-is (bg1/tx1/accent1/...), with no
+  bg/tx-alias translation applied."
+  [xml]
   (some-> (second (re-find #"<a:schemeClr\b[^>]*\bval=\"([A-Za-z0-9]+)\"" (or xml "")))
           str/lower-case
-          keyword
-          ((fn [role] (get default-color-map role role)))))
+          keyword))
+
+(defn scheme-color-role
+  "bg1/tx1/bg2/tx2 translated to their default (dk/lt) theme slot; every
+  other role (accent1-6, hlink, folHlink) passes through unchanged. This is
+  the OOXML *default* clrMap -- a deck with a non-default <p:clrMap>
+  override should resolve through that instead (see first-color's
+  theme-colors lookup, which checks for a pre-resolved alias entry first)."
+  [xml]
+  (let [role (raw-scheme-color-role xml)]
+    (get default-color-map role role)))
 
 (defn first-color
+  "theme-colors may contain the alias keys (:bg1/:tx1/:bg2/:tx2) directly,
+  pre-resolved through the SLIDE'S OWN (possibly non-default) <p:clrMap> by
+  the caller (see presentationml.parse/theme-color-map-for-slide) -- checked
+  before falling back to the OOXML default bg/tx->dk/lt translation, so a
+  deck with a custom clrMap resolves schemeClr correctly instead of always
+  assuming the default mapping."
   ([xml] (first-color xml nil))
   ([xml theme-colors]
    (or (some-> (or (second (re-find #"<a:srgbClr\b[^>]*\bval=\"([0-9A-Fa-f]{6})\"" (or xml "")))
                    (second (re-find #"\blastClr=\"([0-9A-Fa-f]{6})\"" (or xml ""))))
                str/upper-case)
-       (get theme-colors (scheme-color-role xml)))))
+       (let [role (raw-scheme-color-role xml)]
+         (or (get theme-colors role)
+             (get theme-colors (get default-color-map role role)))))))
 
 (defn- fill-block
   "The content of a shape's fill element, whichever kind it is. A gradient
@@ -252,6 +273,17 @@
   ([block theme-colors]
    (some-> (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))
            (first-color theme-colors))))
+
+(defn line-dash
+  "A shape/connector line's dash style (:dash, :dashDot, :lgDash, :sysDot,
+  ...) from <a:ln>...<a:prstDash val=\"...\"/>..., or nil for the default
+  solid line. Previously unread anywhere -- every line always exported
+  solid regardless of the source deck's actual dash pattern."
+  [block]
+  (some-> (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))
+          (->> (re-find #"<a:prstDash\b[^>]*\bval=\"([A-Za-z]+)\""))
+          second
+          keyword))
 
 (defn- text-body [block]
   (second (or (re-find #"<p:txBody\b[^>]*>([\s\S]*?)</p:txBody>" (or block ""))
@@ -286,6 +318,50 @@
   (if-let [sz (some-> (re-find #"<a:rPr\b[^>]*>" (or block "")) (xml-attr "sz") parse-double-safe)]
     (double (/ sz 100))
     fallback))
+
+(defn- first-rpr [block]
+  (re-find #"<a:rPr\b[^>]*>" (or block "")))
+
+(defn bold? [block]
+  (= "1" (xml-attr (first-rpr block) "b")))
+
+(defn italic? [block]
+  (= "1" (xml-attr (first-rpr block) "i")))
+
+(defn underline? [block]
+  (let [u (xml-attr (first-rpr block) "u")]
+    (boolean (and u (not= "none" u)))))
+
+(defn strikethrough? [block]
+  (let [s (xml-attr (first-rpr block) "strike")]
+    (boolean (and s (not= "noStrike" s)))))
+
+(defn baseline
+  "The run's baseline shift as a plain percentage (30.0 = 30% superscript,
+  -25.0 = 25% subscript), converted from OOXML's raw thousandths-of-a-
+  percent `baseline` attribute. nil when absent (no superscript/subscript)."
+  [block]
+  (some-> (xml-attr (first-rpr block) "baseline") parse-double-safe (/ 1000.0)))
+
+(defn- first-rpr-block
+  "The first run's full <a:rPr>...</a:rPr> (or self-closing <a:rPr/>), for
+  finding CHILD elements (like <a:hlinkClick>) that first-rpr's opening-tag-
+  only match can't see."
+  [block]
+  (or (re-find #"<a:rPr\b[^>]*>[\s\S]*?</a:rPr>" (or block ""))
+      (re-find #"<a:rPr\b[^>]*/>" (or block ""))))
+
+(defn hyperlink-rel-id [block]
+  (second (re-find #"<a:hlinkClick\b[^>]*\br:id=\"([^\"]*)\"" (or (first-rpr-block block) ""))))
+
+(defn hyperlink-url
+  "The run's hyperlink target URL, resolved through opts' :rels (the same
+  slide-relationship map chart-shape already uses for chart-rel-id) --
+  resolve-target passes an external URL (TargetMode=\"External\", the normal
+  case for a hyperlink) through unchanged, so target-path already holds it."
+  [block opts]
+  (when-let [rel-id (hyperlink-rel-id block)]
+    (get-in (:rels opts) [rel-id :target-path])))
 
 (defn- paragraph-text
   "A single <a:p>'s own text: its runs concatenated with no separator (they
@@ -405,7 +481,14 @@
          (seq paras) (assoc :drawingml/paragraphs paras)
          (and geom (not= :rect geom)) (assoc :drawingml/geometry geom)
          fill (assoc :drawingml/fill fill)
-         line (assoc :drawingml/line line))))))
+         line (assoc :drawingml/line line)
+         (bold? block) (assoc :drawingml/bold true)
+         (italic? block) (assoc :drawingml/italic true)
+         (underline? block) (assoc :drawingml/underline true)
+         (strikethrough? block) (assoc :drawingml/strikethrough true)
+         (baseline block) (assoc :drawingml/baseline (baseline block))
+         (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
+         (line-dash block) (assoc :drawingml/line-dash (line-dash block)))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -425,7 +508,8 @@
                       :drawingml/fill (or (solid-fill block (:theme-colors opts)) "EAF0F8")}
                      (xfrm block opts))
               block)
-       (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))))))
+       (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))
+       (line-dash block) (assoc :drawingml/line-dash (line-dash block))))))
 
 (defn pic-shape
   ([idx block] (pic-shape idx block {}))
@@ -499,11 +583,12 @@
   common in flowcharts/diagrams and were silently vanishing on import."
   ([idx block] (connector-shape idx block {}))
   ([idx block opts]
-   (merge {:drawingml/id (shape-name block idx "connector")
-           :drawingml/kind :connector
-           :drawingml/geometry (or (geometry block) :straightConnector1)
-           :drawingml/line (or (line-fill block (:theme-colors opts)) "334155")}
-          (xfrm block opts))))
+   (cond-> (merge {:drawingml/id (shape-name block idx "connector")
+                   :drawingml/kind :connector
+                   :drawingml/geometry (or (geometry block) :straightConnector1)
+                   :drawingml/line (or (line-fill block (:theme-colors opts)) "334155")}
+                  (xfrm block opts))
+     (line-dash block) (assoc :drawingml/line-dash (line-dash block)))))
 
 (defn shapes
   ([xml] (shapes xml {}))

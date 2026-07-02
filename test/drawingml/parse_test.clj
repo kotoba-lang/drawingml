@@ -221,6 +221,79 @@
       (is (= 0.5 (:drawingml/h shape))))
     (is (= "Grouped shape" (:drawingml/text shape)))))
 
+(def richly-formatted-run-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r>
+     <a:rPr b=\"1\" i=\"1\" u=\"sng\" strike=\"sngStrike\" baseline=\"30000\"/>
+     <a:t>Fancy text</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(def plain-run-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r><a:rPr/><a:t>Plain text</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(deftest text-run-formatting-test
+  (testing "bold/italic/underline/strikethrough/baseline are all read"
+    (let [shape (dml/text-shape 0 richly-formatted-run-sp)]
+      (is (true? (:drawingml/bold shape)))
+      (is (true? (:drawingml/italic shape)))
+      (is (true? (:drawingml/underline shape)))
+      (is (true? (:drawingml/strikethrough shape)))
+      (is (= 30.0 (:drawingml/baseline shape)))))
+  (testing "none of these keys are added when the run has no such formatting"
+    (let [shape (dml/text-shape 0 plain-run-sp)]
+      (is (not (contains? shape :drawingml/bold)))
+      (is (not (contains? shape :drawingml/italic)))
+      (is (not (contains? shape :drawingml/underline)))
+      (is (not (contains? shape :drawingml/strikethrough)))
+      (is (not (contains? shape :drawingml/baseline)))))
+  (testing "u=\"none\"/strike=\"noStrike\" are explicit absence, not presence"
+    (let [shape (dml/text-shape 0 "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:rPr u=\"none\" strike=\"noStrike\"/><a:t>x</a:t></a:r></a:p></p:txBody></p:sp>")]
+      (is (not (contains? shape :drawingml/underline)))
+      (is (not (contains? shape :drawingml/strikethrough))))))
+
+(def hyperlinked-run-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r>
+     <a:rPr><a:hlinkClick r:id=\"rId3\"/></a:rPr>
+     <a:t>Click here</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(deftest hyperlink-resolution-test
+  (testing "hlinkClick's r:id resolves through opts' :rels to the external URL"
+    (let [shape (dml/text-shape 0 hyperlinked-run-sp
+                                {:rels {"rId3" {:id "rId3" :target-path "https://example.com/"}}})]
+      (is (= "https://example.com/" (:drawingml/hyperlink shape)))))
+  (testing "no :rels entry for the rel-id -- no hyperlink key added"
+    (let [shape (dml/text-shape 0 hyperlinked-run-sp {})]
+      (is (not (contains? shape :drawingml/hyperlink)))))
+  (testing "no hlinkClick at all -- no hyperlink key added"
+    (let [shape (dml/text-shape 0 plain-run-sp {:rels {"rId3" {:target-path "https://example.com/"}}})]
+      (is (not (contains? shape :drawingml/hyperlink))))))
+
+(def dashed-line-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
+     <a:ln><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill><a:prstDash val=\"dash\"/></a:ln>
+   </p:spPr></p:sp>")
+
+(deftest line-dash-test
+  (testing "a dashed line's style is read"
+    (is (= :dash (dml/line-dash dashed-line-rect-sp)))
+    (is (= :dash (:drawingml/line-dash (dml/rect-shape 0 dashed-line-rect-sp)))))
+  (testing "no <a:prstDash> -- solid line, no key added"
+    (let [solid-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:ln></p:spPr></p:sp>"]
+      (is (nil? (dml/line-dash solid-sp)))
+      (is (not (contains? (dml/rect-shape 0 solid-sp) :drawingml/line-dash))))))
+
+(deftest first-color-prefers-pre-resolved-clr-map-alias-test
+  (testing "when theme-colors already has the RAW alias key (a custom clrMap resolution), it wins over the default bg/tx translation"
+    (is (= "AABBCC"
+           (dml/first-color "<a:schemeClr val=\"tx1\"/>" {:tx1 "AABBCC" :dk1 "112233"}))))
+  (testing "without a pre-resolved alias key, falls back to the default bg/tx->dk/lt translation"
+    (is (= "112233"
+           (dml/first-color "<a:schemeClr val=\"tx1\"/>" {:dk1 "112233"})))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))
