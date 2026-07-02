@@ -148,6 +148,28 @@
       (is (= 1 (count found)))
       (is (= :connector (:drawingml/kind (first found)))))))
 
+(deftest gradient-and-pattern-fill-approximate-to-a-real-color-test
+  (testing "a gradient fill approximates to its first stop's color instead of falling back to nil"
+    (is (= "336699"
+           (dml/solid-fill
+            (str "<p:sp><p:spPr><a:gradFill><a:gsLst>"
+                 "<a:gs pos=\"0\"><a:srgbClr val=\"336699\"/></a:gs>"
+                 "<a:gs pos=\"100000\"><a:srgbClr val=\"AABBCC\"/></a:gs>"
+                 "</a:gsLst></a:gradFill></p:spPr></p:sp>")))))
+  (testing "a pattern fill approximates to its foreground color"
+    (is (= "992222"
+           (dml/solid-fill
+            (str "<p:sp><p:spPr><a:pattFill prst=\"pct20\">"
+                 "<a:fgClr><a:srgbClr val=\"992222\"/></a:fgClr>"
+                 "<a:bgClr><a:srgbClr val=\"FFFFFF\"/></a:bgClr>"
+                 "</a:pattFill></p:spPr></p:sp>")))))
+  (testing "an explicit solidFill still wins over a gradFill/pattFill in the same block"
+    (is (= "112233"
+           (dml/solid-fill
+            (str "<p:sp><p:spPr><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill>"
+                 "<a:gradFill><a:gsLst><a:gs><a:srgbClr val=\"336699\"/></a:gs></a:gsLst></a:gradFill>"
+                 "</p:spPr></p:sp>"))))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))

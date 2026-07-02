@@ -170,11 +170,21 @@
                str/upper-case)
        (get theme-colors (scheme-color-role xml)))))
 
+(defn- fill-block
+  "The content of a shape's fill element, whichever kind it is. A gradient
+  fill approximates to its FIRST stop's color and a pattern fill to its
+  foreground color -- not faithful, but a real (if imperfect) color beats
+  silently collapsing to the hardcoded shape-fallback color, which is what
+  happened when only <a:solidFill> was recognized."
+  [block]
+  (or (second (re-find #"<a:solidFill\b[^>]*>([\s\S]*?)</a:solidFill>" (or block "")))
+      (second (re-find #"<a:gradFill\b[^>]*>([\s\S]*?)</a:gradFill>" (or block "")))
+      (second (re-find #"<a:pattFill\b[^>]*>([\s\S]*?)</a:pattFill>" (or block "")))))
+
 (defn solid-fill
   ([block] (solid-fill block nil))
   ([block theme-colors]
-   (some-> (second (re-find #"<a:solidFill\b[^>]*>([\s\S]*?)</a:solidFill>" (or block "")))
-           (first-color theme-colors))))
+   (some-> (fill-block block) (first-color theme-colors))))
 
 (defn line-fill
   ([block] (line-fill block nil))
