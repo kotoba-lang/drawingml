@@ -179,7 +179,36 @@
       (is (= {:width 1.0 :color "112233"} (get-in (first cells) [0 :borders :left])))
       (is (= {:width 2.0 :color "445566"} (get-in (first cells) [0 :borders :top])))
       (is (= "Plain" (get-in cells [0 1])) "the other cell, with no border override, is still a plain string")
-      (is (true? (dml/table-non-uniform? cells))))))
+      (is (true? (dml/table-non-uniform? cells)))))
+  (testing "diagonal sides (lnTlToBr/lnBlToRt) are captured alongside the four straight sides"
+    (is (= {:diagonal-down {:width 1.0 :color "112233"} :diagonal-up {:width 2.0 :color "445566"}}
+           (dml/table-cell-borders
+            (str "<a:tc><a:tcPr>"
+                 "<a:lnTlToBr w=\"12700\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:lnTlToBr>"
+                 "<a:lnBlToRt w=\"25400\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:lnBlToRt>"
+                 "</a:tcPr></a:tc>")
+            nil)))))
+
+(deftest table-cell-margins-and-anchor-test
+  (testing "margins (EMU -> inches) and vertical anchor are captured, only the attrs present"
+    (is (= {:margin-left 0.1 :margin-top 0.05 :anchor :center}
+           (dml/table-cell-margins-and-anchor
+            "<a:tc><a:tcPr marL=\"91440\" marT=\"45720\" anchor=\"ctr\"><a:noFill/></a:tcPr></a:tc>"))))
+  (testing "a SELF-CLOSING <a:tcPr .../> (no border/fill children) is still captured"
+    (is (= {:anchor :bottom} (dml/table-cell-margins-and-anchor "<a:tc><a:tcPr anchor=\"b\"/></a:tc>"))))
+  (testing "no margin/anchor overrides at all -- nil"
+    (is (nil? (dml/table-cell-margins-and-anchor "<a:tc><a:tcPr/></a:tc>")))
+    (is (nil? (dml/table-cell-margins-and-anchor "<a:tc><a:txBody/></a:tc>"))))
+  (testing "wired into table-cells on the anchor cell"
+    (let [cells (dml/table-cells
+                 (str "<a:tbl><a:tr>"
+                      "<a:tc><a:txBody><a:p><a:r><a:t>Centered</a:t></a:r></a:p></a:txBody>"
+                      "<a:tcPr anchor=\"ctr\"/></a:tc>"
+                      "<a:tc><a:txBody><a:p><a:r><a:t>Plain</a:t></a:r></a:p></a:txBody></a:tc>"
+                      "</a:tr></a:tbl>")
+                 nil)]
+      (is (= :center (get-in (first cells) [0 :anchor])))
+      (is (= "Plain" (get-in cells [0 1]))))))
 
 (def round-rect-themed-fill-with-text
   "A roundRect AutoShape (not :rect geometry) with a themed SHAPE fill and a
