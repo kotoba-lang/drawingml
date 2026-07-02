@@ -1155,6 +1155,33 @@
        :drawingml/color (if (zero? idx) "17202A" "334155")})
     texts)))
 
+(defn- connector-endpoint
+  "One connector endpoint, <a:stCxn>/<a:endCxn id=\"...\" idx=\"...\"/>
+  inside <p:cNvCxnSpPr> -- id is the OTHER shape's own shape id (the
+  <p:cNvPr id=\"...\"> this connector snaps to), idx is which of that
+  shape's connection sites (0, 1, 2...) it's attached to. nil when this
+  end of the connector isn't attached to anything (a free-floating
+  endpoint, positioned purely by its own xfrm)."
+  [block tag]
+  (when-let [tag-str (re-find (re-pattern (str "<a:" tag "\\b[^>]*/?>")) (or block ""))]
+    (when-let [shape-id (xml-attr tag-str "id")]
+      (cond-> {:shape-id (long (parse-double-safe shape-id))}
+        (xml-attr tag-str "idx") (assoc :idx (long (parse-double-safe (xml-attr tag-str "idx"))))))))
+
+(defn connector-connections
+  "A connector's own shape-to-shape attachments, {:start {...} :end
+  {...}} (each {:shape-id N :idx N}, only the ends actually attached).
+  Previously entirely unhandled -- a connector attached to two shapes
+  (the overwhelmingly common real-deck case; flowcharts/diagrams routinely
+  rely on this so the connector follows a shape when it's moved) always
+  round-tripped as a free-floating line with no attachment info at all.
+  nil when NEITHER end is attached."
+  [block]
+  (not-empty
+   (cond-> {}
+     (connector-endpoint block "stCxn") (assoc :start (connector-endpoint block "stCxn"))
+     (connector-endpoint block "endCxn") (assoc :end (connector-endpoint block "endCxn")))))
+
 (defn connector-shape
   "A <p:cxnSp> connector line/arrow between shapes. Previously totally
   unhandled (zero references anywhere in this package) -- connectors are
@@ -1170,7 +1197,8 @@
      (line-width block) (assoc :drawingml/line-width (line-width block))
      (line-cap block) (assoc :drawingml/line-cap (line-cap block))
      (line-join block) (assoc :drawingml/line-join (line-join block))
-     (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block)))))
+     (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
+     (connector-connections block) (assoc :drawingml/connections (connector-connections block)))))
 
 (defn shapes
   ([xml] (shapes xml {}))

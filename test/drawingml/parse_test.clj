@@ -265,6 +265,27 @@
       (is (= 1 (count found)))
       (is (= :connector (:drawingml/kind (first found)))))))
 
+(def attached-connector-block
+  "<p:cxnSp><p:nvCxnSpPr><p:cNvPr id=\"5\" name=\"Arrow\"/>
+   <p:cNvCxnSpPr><a:stCxn id=\"2\" idx=\"1\"/><a:endCxn id=\"3\" idx=\"3\"/></p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr>
+   <p:spPr><a:xfrm><a:off x=\"914400\" y=\"457200\"/><a:ext cx=\"1828800\" cy=\"0\"/></a:xfrm>
+   <a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom>
+   <a:ln><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:ln></p:spPr></p:cxnSp>")
+
+(deftest connector-connections-test
+  (testing "both ends' shape attachments (shape-id + connection-site idx) are captured"
+    (is (= {:start {:shape-id 2 :idx 1} :end {:shape-id 3 :idx 3}}
+           (dml/connector-connections attached-connector-block))))
+  (testing "wired into connector-shape as :drawingml/connections"
+    (is (= {:start {:shape-id 2 :idx 1} :end {:shape-id 3 :idx 3}}
+           (:drawingml/connections (dml/connector-shape 0 attached-connector-block)))))
+  (testing "a free-floating connector (no stCxn/endCxn at all) -- nil, no attachment info"
+    (is (nil? (dml/connector-connections straight-connector-block)))
+    (is (not (contains? (dml/connector-shape 0 straight-connector-block) :drawingml/connections))))
+  (testing "only ONE end attached is captured correctly"
+    (let [half-attached "<p:cxnSp><p:nvCxnSpPr><p:cNvPr id=\"5\" name=\"Arrow\"/><p:cNvCxnSpPr><a:stCxn id=\"2\" idx=\"1\"/></p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr><p:spPr></p:spPr></p:cxnSp>"]
+      (is (= {:start {:shape-id 2 :idx 1}} (dml/connector-connections half-attached))))))
+
 (deftest gradient-and-pattern-fill-approximate-to-a-real-color-test
   (testing "a gradient fill approximates to its first stop's color instead of falling back to nil"
     (is (= "336699"
