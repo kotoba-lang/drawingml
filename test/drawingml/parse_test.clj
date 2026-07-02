@@ -72,6 +72,11 @@
       (is (= {:type :char :char "•"} (:bullet (nth paras 0)))))
     (testing "auto-numbered bullets capture their numbering scheme"
       (is (= {:type :auto-num :scheme "arabicPeriod"} (:bullet (nth paras 1)))))
+    (testing "an explicit startAt (list restart point) is captured; absent when unset"
+      (let [restarted-sp "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:pPr><a:buAutoNum type=\"arabicPeriod\" startAt=\"5\"/></a:pPr><a:r><a:t>Fifth item</a:t></a:r></a:p></p:txBody></p:sp>"]
+        (is (= {:type :auto-num :scheme "arabicPeriod" :start-at 5}
+               (:bullet (first (:drawingml/paragraphs (dml/text-shape 0 restarted-sp))))))
+        (is (not (contains? (:bullet (nth paras 1)) :start-at)))))
     (testing "an explicit <a:buNone/> is distinguished from \"no bullet info at all\""
       (is (= {:type :none} (:bullet (nth paras 2)))))
     (testing "a paragraph with no <a:pPr> at all carries no align/bullet/line-spacing keys"
