@@ -477,6 +477,47 @@
       (is (nil? (dml/shape-shadow plain-sp nil)))
       (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/shadow))))))
 
+(def glowing-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill>
+     <a:effectLst><a:glow rad=\"63500\">
+       <a:srgbClr val=\"00B0F0\"><a:alpha val=\"60000\"/></a:srgbClr>
+     </a:glow></a:effectLst>
+   </p:spPr></p:sp>")
+
+(deftest shape-glow-test
+  (testing "a glow's radius/color/alpha are all read"
+    (let [glow (dml/shape-glow glowing-rect-sp nil)]
+      (is (= 5.0 (:radius glow)))
+      (is (= "00B0F0" (:color glow)))
+      (is (= 60.0 (:alpha glow)))))
+  (testing "wired into rect-shape as :drawingml/glow"
+    (is (some? (:drawingml/glow (dml/rect-shape 0 glowing-rect-sp)))))
+  (testing "no <a:glow> at all -- nil, no key added"
+    (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/shape-glow plain-sp nil)))
+      (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/glow))))))
+
+(def reflected-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill>
+     <a:effectLst><a:reflection blurRad=\"12700\" stA=\"50000\" endA=\"0\" dist=\"6350\" dir=\"5400000\"
+       sy=\"-100000\" algn=\"bl\" rotWithShape=\"0\"/></a:effectLst>
+   </p:spPr></p:sp>")
+
+(deftest shape-reflection-test
+  (testing "a reflection's blur/distance/angle/start-alpha/end-alpha are all read (it has no color of its own)"
+    (let [reflection (dml/shape-reflection reflected-rect-sp)]
+      (is (= 1.0 (:blur reflection)))
+      (is (= 0.5 (:distance reflection)))
+      (is (= 90.0 (:angle reflection)))
+      (is (= 50.0 (:start-alpha reflection)))
+      (is (= 0.0 (:end-alpha reflection)))))
+  (testing "wired into rect-shape as :drawingml/reflection"
+    (is (some? (:drawingml/reflection (dml/rect-shape 0 reflected-rect-sp)))))
+  (testing "no <a:reflection> at all -- nil, no key added"
+    (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/shape-reflection plain-sp)))
+      (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/reflection))))))
+
 (def full-body-pr-sp
   (str "<p:sp><p:spPr></p:spPr>"
        "<p:txBody><a:bodyPr wrap=\"none\" anchor=\"ctr\" anchorCtr=\"1\" "
