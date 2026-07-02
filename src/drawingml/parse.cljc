@@ -453,19 +453,22 @@
       (re-find #"<a:round\b" ln-body) {:type :round}
       :else nil)))
 
+(defn- effect-lst-body
+  "A shape's own <p:spPr>'s <a:effectLst>...</a:effectLst> inner content,
+  or nil for a shape with no effects at all -- the shared scan point for
+  shadow/glow/reflection, which are all siblings within the same list."
+  [block]
+  (some-> (spPr-block block)
+          (->> (re-find #"<a:effectLst\b[^>]*>([\s\S]*?)</a:effectLst>"))
+          second))
+
 (defn shape-shadow
   "A shape's own outer shadow (<p:spPr>'s <a:effectLst><a:outerShdw
   blurRad=\"...\" dist=\"...\" dir=\"...\">...color...</a:outerShdw>
   </a:effectLst>), as {:blur pt :distance pt :angle deg :color hex :alpha
-  pct}, or nil when the shape has no shadow. Only outerShdw -- the single
-  most common real-deck effect -- is read; other effect types (glow,
-  reflection, blur, soft edge, 3D bevel) remain entirely unhandled, a
-  documented rather than silent limitation. Previously effects were
-  unread anywhere in this package at all."
+  pct}, or nil when the shape has no shadow."
   [block theme-colors]
-  (let [effect-lst (some-> (spPr-block block)
-                           (->> (re-find #"<a:effectLst\b[^>]*>([\s\S]*?)</a:effectLst>"))
-                           second)
+  (let [effect-lst (effect-lst-body block)
         outer-open (some->> effect-lst (re-find #"<a:outerShdw\b[^>]*>"))
         outer-body (some-> effect-lst
                            (->> (re-find #"<a:outerShdw\b[^>]*>([\s\S]*?)</a:outerShdw>"))
@@ -479,6 +482,42 @@
                  :angle (some-> (xml-attr outer-open "dir") parse-double-safe (/ 60000.0))}
           color (assoc :color color)
           alpha (assoc :alpha alpha))))))
+
+(defn shape-glow
+  "A shape's own glow effect (<p:spPr>'s <a:effectLst><a:glow
+  rad=\"...\">...color...</a:glow></a:effectLst>), as {:radius pt :color
+  hex :alpha pct}, or nil when the shape has no glow."
+  [block theme-colors]
+  (let [effect-lst (effect-lst-body block)
+        glow-open (some->> effect-lst (re-find #"<a:glow\b[^>]*>"))
+        glow-body (some-> effect-lst
+                          (->> (re-find #"<a:glow\b[^>]*>([\s\S]*?)</a:glow>"))
+                          second)]
+    (when glow-open
+      (let [color (first-color glow-body theme-colors)
+            alpha (some-> (re-find #"<a:alpha\b[^>]*\bval=\"(\d+)\"" (or glow-body "")) second
+                          parse-double-safe (/ 1000.0))]
+        (cond-> {:radius (some-> (xml-attr glow-open "rad") parse-double-safe (/ 12700.0))}
+          color (assoc :color color)
+          alpha (assoc :alpha alpha))))))
+
+(defn shape-reflection
+  "A shape's own reflection effect (<p:spPr>'s <a:effectLst><a:reflection
+  .../></a:effectLst>, self-closing -- unlike shadow/glow, a reflection
+  mirrors the shape's OWN fill; it carries no color of its own), as {:blur
+  pt :distance pt :angle deg :start-alpha pct :end-alpha pct} (each key
+  only when its attribute is actually present), or nil when the shape has
+  no reflection at all."
+  [block]
+  (let [effect-lst (effect-lst-body block)
+        refl-tag (some->> effect-lst (re-find #"<a:reflection\b[^>]*/?>"))]
+    (when refl-tag
+      (cond-> {}
+        (xml-attr refl-tag "blurRad") (assoc :blur (some-> (xml-attr refl-tag "blurRad") parse-double-safe (/ 12700.0)))
+        (xml-attr refl-tag "dist") (assoc :distance (some-> (xml-attr refl-tag "dist") parse-double-safe (/ 12700.0)))
+        (xml-attr refl-tag "dir") (assoc :angle (some-> (xml-attr refl-tag "dir") parse-double-safe (/ 60000.0)))
+        (xml-attr refl-tag "stA") (assoc :start-alpha (some-> (xml-attr refl-tag "stA") parse-double-safe (/ 1000.0)))
+        (xml-attr refl-tag "endA") (assoc :end-alpha (some-> (xml-attr refl-tag "endA") parse-double-safe (/ 1000.0)))))))
 
 (defn- text-body [block]
   (second (or (re-find #"<p:txBody\b[^>]*>([\s\S]*?)</p:txBody>" (or block ""))
@@ -906,6 +945,8 @@
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
+         (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
+         (shape-reflection block) (assoc :drawingml/reflection (shape-reflection block))
          (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block))
          (text-body-props block) (assoc :drawingml/body-props (text-body-props block))
          (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts))))))))
@@ -940,6 +981,8 @@
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
+         (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
+         (shape-reflection block) (assoc :drawingml/reflection (shape-reflection block))
          custom (assoc :drawingml/custom-geometry custom)
          (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts))))))))
 
