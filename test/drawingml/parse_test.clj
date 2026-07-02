@@ -286,6 +286,20 @@
       (is (nil? (dml/line-dash solid-sp)))
       (is (not (contains? (dml/rect-shape 0 solid-sp) :drawingml/line-dash))))))
 
+(def thick-line-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
+     <a:ln w=\"38100\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:ln>
+   </p:spPr></p:sp>")
+
+(deftest line-width-test
+  (testing "a 3pt line width (38100 EMU) is read as a plain point value"
+    (is (= 3.0 (dml/line-width thick-line-rect-sp)))
+    (is (= 3.0 (:drawingml/line-width (dml/rect-shape 0 thick-line-rect-sp)))))
+  (testing "no w attribute at all -- no key added (writer's own 1pt default applies)"
+    (let [no-width-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:ln><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:ln></p:spPr></p:sp>"]
+      (is (nil? (dml/line-width no-width-sp)))
+      (is (not (contains? (dml/rect-shape 0 no-width-sp) :drawingml/line-width))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>

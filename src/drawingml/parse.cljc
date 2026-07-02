@@ -337,6 +337,18 @@
    (some-> (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))
            (first-color theme-colors))))
 
+(defn line-width
+  "A shape/connector line's width in points, from <a:ln w=\"...\"> (EMU,
+  12700 per point). nil when the line has no explicit width attribute at
+  all (the writer's own default, 1pt, applied when this is missing).
+  Previously unread anywhere -- every written line always exported at a
+  hardcoded 1pt regardless of the source deck's actual line weight."
+  [block]
+  (some-> (re-find #"<a:ln\b[^>]*>" (or block ""))
+          (xml-attr "w")
+          parse-double-safe
+          (/ 12700.0)))
+
 (defn line-dash
   "A shape/connector line's dash style (:dash, :dashDot, :lgDash, :sysDot,
   ...) from <a:ln>...<a:prstDash val=\"...\"/>..., or nil for the default
@@ -552,6 +564,7 @@
          (baseline block) (assoc :drawingml/baseline (baseline block))
          (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
          (line-dash block) (assoc :drawingml/line-dash (line-dash block))
+         (line-width block) (assoc :drawingml/line-width (line-width block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts)))))))
 
@@ -575,6 +588,7 @@
               block)
        (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))
        (line-dash block) (assoc :drawingml/line-dash (line-dash block))
+       (line-width block) (assoc :drawingml/line-width (line-width block))
        (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
        (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))))))
 
@@ -655,7 +669,8 @@
                    :drawingml/geometry (or (geometry block) :straightConnector1)
                    :drawingml/line (or (line-fill block (:theme-colors opts)) "334155")}
                   (xfrm block opts))
-     (line-dash block) (assoc :drawingml/line-dash (line-dash block)))))
+     (line-dash block) (assoc :drawingml/line-dash (line-dash block))
+     (line-width block) (assoc :drawingml/line-width (line-width block)))))
 
 (defn shapes
   ([xml] (shapes xml {}))
