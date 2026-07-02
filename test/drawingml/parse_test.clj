@@ -184,6 +184,43 @@
       (is (not (contains? geom :drawingml/flip-h)))
       (is (not (contains? geom :drawingml/flip-v))))))
 
+(deftest apply-group-transform-test
+  (testing "identity when the group's on-slide box exactly matches its child coordinate space"
+    (let [group-xf {:off-x 1.0 :off-y 1.0 :ext-w 2.0 :ext-h 2.0
+                    :ch-off-x 0.0 :ch-off-y 0.0 :ch-ext-w 2.0 :ch-ext-h 2.0}
+          shape {:drawingml/x 0.5 :drawingml/y 0.5 :drawingml/w 1.0 :drawingml/h 1.0}]
+      (is (= {:drawingml/x 1.5 :drawingml/y 1.5 :drawingml/w 1.0 :drawingml/h 1.0}
+             (dml/apply-group-transform shape group-xf)))))
+  (testing "a group resized to half its original child-space extent scales children down 2x"
+    (let [group-xf {:off-x 0.0 :off-y 0.0 :ext-w 1.0 :ext-h 1.0
+                    :ch-off-x 0.0 :ch-off-y 0.0 :ch-ext-w 2.0 :ch-ext-h 2.0}
+          shape {:drawingml/x 1.0 :drawingml/y 1.0 :drawingml/w 1.0 :drawingml/h 1.0}]
+      (is (= {:drawingml/x 0.5 :drawingml/y 0.5 :drawingml/w 0.5 :drawingml/h 0.5}
+             (dml/apply-group-transform shape group-xf)))))
+  (testing "nil group-xf (a group with no xfrm) leaves the shape untouched"
+    (let [shape {:drawingml/x 1.0 :drawingml/y 1.0 :drawingml/w 1.0 :drawingml/h 1.0}]
+      (is (= shape (dml/apply-group-transform shape nil))))))
+
+(def grouped-shapes-block
+  "<p:spTree>
+    <p:grpSp>
+      <p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/>
+        <a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"1828800\" cy=\"1828800\"/></a:xfrm></p:grpSpPr>
+      <p:sp><p:spPr><a:xfrm><a:off x=\"914400\" y=\"914400\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr>
+        <p:txBody><a:p><a:r><a:t>Grouped shape</a:t></a:r></a:p></p:txBody></p:sp>
+    </p:grpSp>
+   </p:spTree>")
+
+(deftest grouped-shape-geometry-is-rescaled-into-slide-coordinates-test
+  (let [found (dml/shapes grouped-shapes-block)
+        shape (first found)]
+    (testing "the group halves its child coordinate space (1in on-slide box, 2in child extent) -- child position/size scale 2x down"
+      (is (= 0.5 (:drawingml/x shape)))
+      (is (= 0.5 (:drawingml/y shape)))
+      (is (= 0.5 (:drawingml/w shape)))
+      (is (= 0.5 (:drawingml/h shape))))
+    (is (= "Grouped shape" (:drawingml/text shape)))))
+
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"
     (is (= :dk1 (dml/scheme-color-role "<a:schemeClr val=\"tx1\"/>")))

@@ -90,6 +90,60 @@
   (cond-> shape
     group (assoc :drawingml/group group)))
 
+(defn- group-xfrm
+  "A <p:grpSp>'s own transform: off/ext (its box in SLIDE coordinates) and
+  chOff/chExt (the origin/extent of the coordinate space its CHILDREN's own
+  xfrm off/ext are expressed in -- almost never identical to off/ext, since
+  PowerPoint lets a group's child coordinate space be scaled independently
+  of the group's on-slide box, e.g. when the group has been resized after
+  grouping). nil when the group has no xfrm at all."
+  [group-block]
+  (when-let [body (second (re-find #"<a:xfrm\b[^>]*>([\s\S]*?)</a:xfrm>" (or group-block "")))]
+    (let [off (or (re-find #"<a:off\b[^>]*>" body) "")
+          ext (or (re-find #"<a:ext\b[^>]*>" body) "")
+          ch-off (or (re-find #"<a:chOff\b[^>]*>" body) "")
+          ch-ext (or (re-find #"<a:chExt\b[^>]*>" body) "")]
+      {:off-x (emu->inch (xml-attr off "x") 0)
+       :off-y (emu->inch (xml-attr off "y") 0)
+       :ext-w (emu->inch (xml-attr ext "cx") 1)
+       :ext-h (emu->inch (xml-attr ext "cy") 1)
+       :ch-off-x (emu->inch (xml-attr ch-off "x") 0)
+       :ch-off-y (emu->inch (xml-attr ch-off "y") 0)
+       :ch-ext-w (emu->inch (xml-attr ch-ext "cx") 1)
+       :ch-ext-h (emu->inch (xml-attr ch-ext "cy") 1)})))
+
+(defn apply-group-transform
+  "Maps a shape's xfrm from its group's CHILD coordinate space into slide
+  coordinates: absolute = group-off + (child-pos - group-chOff) * (group-ext
+  / group-chExt). A shape whose own :drawingml/x/y/w/h were read straight off
+  its <a:xfrm> (correct only when the shape is NOT inside a resized group)
+  is silently wrong once a group has been resized after its children were
+  grouped -- chOff/chExt no longer match off/ext 1:1, and every child's
+  coordinates need this rescale to land in the right place on the slide."
+  [shape group-xf]
+  (if-let [{:keys [off-x off-y ext-w ext-h ch-off-x ch-off-y ch-ext-w ch-ext-h]} group-xf]
+    (let [scale-x (if (zero? ch-ext-w) 1.0 (/ ext-w ch-ext-w))
+          scale-y (if (zero? ch-ext-h) 1.0 (/ ext-h ch-ext-h))]
+      (cond-> shape
+        (:drawingml/x shape) (update :drawingml/x #(+ off-x (* scale-x (- % ch-off-x))))
+        (:drawingml/y shape) (update :drawingml/y #(+ off-y (* scale-y (- % ch-off-y))))
+        (:drawingml/w shape) (update :drawingml/w #(* scale-x %))
+        (:drawingml/h shape) (update :drawingml/h #(* scale-y %))))
+    shape))
+
+(defn- apply-group-geometry
+  "Rescales a shape's geometry into slide coordinates when it belongs to a
+  (single-level, non-nested) group with its own xfrm. Nested groups (a group
+  inside a group) are NOT composed through multiple transform levels -- the
+  xml-elements regex this package parses XML with can't reliably delimit
+  nested same-named elements, so only the outermost/first-matched group's
+  transform is available at all; this is a known, documented limit rather
+  than a silent one."
+  [shape groups]
+  (if-let [idx (:index (:drawingml/group shape))]
+    (apply-group-transform shape (group-xfrm (nth groups idx nil)))
+    shape))
+
 (defn- source-extras [shape]
   (cond-> {}
     (:drawingml/group shape) (assoc :ooxml/group (:drawingml/group shape))
@@ -462,21 +516,25 @@
                                            (some-> (or (text-shape shape-idx block opts)
                                                        (rect-shape shape-idx block opts))
                                                    (add-group (group-metadata groups block))
+                                                   (apply-group-geometry groups)
                                                    (with-source opts :p/sp shape-idx)))
                                          shape-blocks))
         pics (vec (map-indexed (fn [idx block]
                                   (-> (pic-shape idx block opts)
                                       (add-group (group-metadata groups block))
+                                      (apply-group-geometry groups)
                                       (with-source opts :p/pic idx)))
                                 (xml-elements xml "p:pic")))
         connectors (vec (map-indexed (fn [idx block]
                                         (-> (connector-shape idx block opts)
                                             (add-group (group-metadata groups block))
+                                            (apply-group-geometry groups)
                                             (with-source opts :p/cxnSp idx)))
                                       (xml-elements xml "p:cxnSp")))
         graphic-frames (vec (keep-indexed (fn [idx block]
                                              (some-> (graphic-frame-shape idx block opts)
                                                      (add-group (group-metadata groups block))
+                                                     (apply-group-geometry groups)
                                                      (with-source opts :p/graphicFrame idx)))
                                            graphic-frame-blocks))
         standalone-tables (vec (keep-indexed
