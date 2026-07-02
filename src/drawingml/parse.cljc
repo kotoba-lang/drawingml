@@ -302,6 +302,30 @@
       (second (re-find #"<a:gradFill\b[^>]*>([\s\S]*?)</a:gradFill>" (or block "")))
       (second (re-find #"<a:pattFill\b[^>]*>([\s\S]*?)</a:pattFill>" (or block "")))))
 
+(defn- spPr-block [block]
+  (second (re-find #"<p:spPr\b[^>]*>([\s\S]*?)</p:spPr>" (or block ""))))
+
+(defn blip-fill-rel-id
+  "A shape's own fill, when it's a picture used AS the fill (<a:blipFill>
+  inside <p:spPr> -- distinct from <p:pic>, where the picture IS the whole
+  shape). The blip's r:embed relationship id, or nil when the shape's own
+  fill isn't a picture at all. Previously totally unhandled: fill-block only
+  recognizes solidFill/gradFill/pattFill, so a blipFill shape's fill was
+  silently dropped, degrading to the hardcoded default fill color with no
+  trace it had ever been picture-filled."
+  [block]
+  (some->> (spPr-block block)
+           (re-find #"<a:blipFill\b[^>]*>[\s\S]*?<a:blip\b[^>]*\br:embed=\"([^\"]*)\"")
+           second))
+
+(defn blip-fill-part
+  "The blip fill's relationship resolved to a package part path via opts'
+  :rels (the same slide-relationship map chart-shape/hyperlink-url already
+  use)."
+  [block opts]
+  (when-let [rel-id (blip-fill-rel-id block)]
+    (get-in opts [:rels rel-id :target-path])))
+
 (defn solid-fill
   ([block] (solid-fill block nil))
   ([block theme-colors]
@@ -527,7 +551,9 @@
          (strikethrough? block) (assoc :drawingml/strikethrough true)
          (baseline block) (assoc :drawingml/baseline (baseline block))
          (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
-         (line-dash block) (assoc :drawingml/line-dash (line-dash block)))))))
+         (line-dash block) (assoc :drawingml/line-dash (line-dash block))
+         (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
+         (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts)))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -548,7 +574,9 @@
                      (xfrm block opts))
               block)
        (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))
-       (line-dash block) (assoc :drawingml/line-dash (line-dash block))))))
+       (line-dash block) (assoc :drawingml/line-dash (line-dash block))
+       (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
+       (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))))))
 
 (defn pic-shape
   ([idx block] (pic-shape idx block {}))
