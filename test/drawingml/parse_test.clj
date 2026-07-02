@@ -375,6 +375,25 @@
       (is (nil? (dml/line-dash solid-sp)))
       (is (not (contains? (dml/rect-shape 0 solid-sp) :drawingml/line-dash))))))
 
+(deftest line-cap-and-join-test
+  (testing "cap: rnd/sq/flat map to :round/:square/nil (flat is PowerPoint's own default)"
+    (is (= :round (dml/line-cap "<p:sp><p:spPr><a:ln cap=\"rnd\"/></p:spPr></p:sp>")))
+    (is (= :square (dml/line-cap "<p:sp><p:spPr><a:ln cap=\"sq\"/></p:spPr></p:sp>")))
+    (is (nil? (dml/line-cap "<p:sp><p:spPr><a:ln cap=\"flat\"/></p:spPr></p:sp>"))))
+  (testing "no cap attribute at all -- nil"
+    (is (nil? (dml/line-cap "<p:sp><p:spPr><a:ln><a:solidFill/></a:ln></p:spPr></p:sp>"))))
+  (testing "join: round/bevel/miter (with its own optional limit, thousandths-of-a-percent -> plain number)"
+    (is (= {:type :round} (dml/line-join "<p:sp><p:spPr><a:ln><a:round/></a:ln></p:spPr></p:sp>")))
+    (is (= {:type :bevel} (dml/line-join "<p:sp><p:spPr><a:ln><a:bevel/></a:ln></p:spPr></p:sp>")))
+    (is (= {:type :miter :limit 800.0} (dml/line-join "<p:sp><p:spPr><a:ln><a:miter lim=\"800000\"/></a:ln></p:spPr></p:sp>")))
+    (is (= {:type :miter} (dml/line-join "<p:sp><p:spPr><a:ln><a:miter/></a:ln></p:spPr></p:sp>"))))
+  (testing "no join child at all -- nil"
+    (is (nil? (dml/line-join "<p:sp><p:spPr><a:ln><a:solidFill/></a:ln></p:spPr></p:sp>"))))
+  (testing "wired into rect-shape/text-shape/connector-shape"
+    (let [cap-join-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:ln cap=\"rnd\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill><a:bevel/></a:ln></p:spPr></p:sp>"]
+      (is (= :round (:drawingml/line-cap (dml/rect-shape 0 cap-join-sp))))
+      (is (= {:type :bevel} (:drawingml/line-join (dml/rect-shape 0 cap-join-sp)))))))
+
 (def thick-line-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:ln w=\"38100\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:ln>

@@ -423,6 +423,36 @@
           second
           keyword))
 
+(defn line-cap
+  "A shape/connector line's cap style, from <a:ln cap=\"rnd|sq|flat\">, or
+  nil when the line has no explicit cap attribute (PowerPoint's own
+  default, flat). Previously unread anywhere -- every written line always
+  exported with no cap attribute regardless of the source deck's actual
+  cap style."
+  [block]
+  (when-let [cap (some-> (re-find #"<a:ln\b[^>]*>" (or block "")) (xml-attr "cap"))]
+    (case cap "rnd" :round "sq" :square nil)))
+
+(defn line-join
+  "A shape/connector line's corner-join style, from <a:ln>'s one child
+  among <a:round/>/<a:bevel/>/<a:miter lim=\"...\"/> (a choice group -- at
+  most one is ever present), as {:type :round}/{:type :bevel}/{:type
+  :miter :limit pct} (limit only when miter's own lim attribute is
+  explicit; OOXML's lim is a percentage x1000, converted to a plain
+  number same as other percentage attributes in this file). nil for the
+  OOXML default (round) or when the line has no <a:ln> at all. Previously
+  unread anywhere."
+  [block]
+  (when-let [ln-body (second (re-find #"<a:ln\b[^>]*>([\s\S]*?)</a:ln>" (or block "")))]
+    (cond
+      (re-find #"<a:bevel\b" ln-body) {:type :bevel}
+      (re-find #"<a:miter\b" ln-body)
+      (let [miter-tag (or (re-find #"<a:miter\b[^>]*/?>" ln-body) "")]
+        (cond-> {:type :miter}
+          (xml-attr miter-tag "lim") (assoc :limit (some-> (xml-attr miter-tag "lim") parse-double-safe (/ 1000.0)))))
+      (re-find #"<a:round\b" ln-body) {:type :round}
+      :else nil)))
+
 (defn shape-shadow
   "A shape's own outer shadow (<p:spPr>'s <a:effectLst><a:outerShdw
   blurRad=\"...\" dist=\"...\" dir=\"...\">...color...</a:outerShdw>
@@ -842,6 +872,8 @@
          (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
          (line-dash block) (assoc :drawingml/line-dash (line-dash block))
          (line-width block) (assoc :drawingml/line-width (line-width block))
+         (line-cap block) (assoc :drawingml/line-cap (line-cap block))
+         (line-join block) (assoc :drawingml/line-join (line-join block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
@@ -874,6 +906,8 @@
          (line-fill block (:theme-colors opts)) (assoc :drawingml/line (line-fill block (:theme-colors opts)))
          (line-dash block) (assoc :drawingml/line-dash (line-dash block))
          (line-width block) (assoc :drawingml/line-width (line-width block))
+         (line-cap block) (assoc :drawingml/line-cap (line-cap block))
+         (line-join block) (assoc :drawingml/line-join (line-join block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
@@ -992,6 +1026,8 @@
                   (xfrm block opts))
      (line-dash block) (assoc :drawingml/line-dash (line-dash block))
      (line-width block) (assoc :drawingml/line-width (line-width block))
+     (line-cap block) (assoc :drawingml/line-cap (line-cap block))
+     (line-join block) (assoc :drawingml/line-join (line-join block))
      (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block)))))
 
 (defn shapes
