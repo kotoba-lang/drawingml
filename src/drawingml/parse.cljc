@@ -670,12 +670,11 @@
   always round-tripped to the geometry's DEFAULT adjustment instead of the
   source's actual one."
   [block]
-  (let [geom-block (second (re-find #"<a:prstGeom\b[^>]*>([\s\S]*?)</a:prstGeom>" (or block "")))
-        av-lst (some-> geom-block (->> (re-find #"<a:avLst\b[^>]*>([\s\S]*?)</a:avLst>")) second)]
-    (when (seq av-lst)
+  (when-let [geom-xml (re-find #"<a:prstGeom\b[^>]*>[\s\S]*?</a:prstGeom>" (or block ""))]
+    (let [gds (xp/find-all (xp/parse geom-xml) :a/gd)]
       (not-empty
-       (vec (for [gd (re-seq #"<a:gd\b[^>]*/?>" av-lst)
-                  :let [gd-name (xml-attr gd "name") fmla (xml-attr gd "fmla")]
+       (vec (for [gd gds
+                  :let [gd-name (xp/el-attr gd "name") fmla (xp/el-attr gd "fmla")]
                   :when (and gd-name fmla)]
               {:name gd-name :fmla fmla}))))))
 
