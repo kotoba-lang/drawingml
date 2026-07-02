@@ -464,8 +464,8 @@
       (is (= 0.25 (:drawingml/h shape))))
     (testing "the shape's :drawingml/group still names its IMMEDIATE (innermost) parent, unchanged from the single-level case"
       (is (some? (:drawingml/group shape))))
-    (testing "the outer group's own block is no longer truncated at the inner group's close -- both blocks are extracted with correct, non-overlapping-wrong bounds"
-      (is (= 2 (count (#'dml/nested-group-blocks nested-grouped-shapes-block)))))))
+    (testing "the outer group's own node is no longer truncated at the inner group's close -- both groups are found as correctly-bounded, DISTINCT tree nodes"
+      (is (= 2 (count (#'dml/nested-group-nodes nested-grouped-shapes-block)))))))
 
 (deftest scheme-color-resolution-test
   (testing "schemeClr resolves through the default bg/tx alias map"

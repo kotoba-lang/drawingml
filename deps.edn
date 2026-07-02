@@ -1,7 +1,7 @@
 {:paths ["src"]
  :deps {io.github.kotoba-lang/xml
         {:git/url "https://github.com/kotoba-lang/xml.git"
-         :git/sha "2dba8992697120f43c59f8fe2687a9b6fad0f8f1"}}
+         :git/sha "568e022a38bea2d97dda2487b930d48d8a61609c"}}
  :aliases
  {:local {:override-deps {io.github.kotoba-lang/xml
                           {:local/root "../xml"}}}
