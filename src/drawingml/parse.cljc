@@ -360,6 +360,33 @@
           second
           keyword))
 
+(defn shape-shadow
+  "A shape's own outer shadow (<p:spPr>'s <a:effectLst><a:outerShdw
+  blurRad=\"...\" dist=\"...\" dir=\"...\">...color...</a:outerShdw>
+  </a:effectLst>), as {:blur pt :distance pt :angle deg :color hex :alpha
+  pct}, or nil when the shape has no shadow. Only outerShdw -- the single
+  most common real-deck effect -- is read; other effect types (glow,
+  reflection, blur, soft edge, 3D bevel) remain entirely unhandled, a
+  documented rather than silent limitation. Previously effects were
+  unread anywhere in this package at all."
+  [block theme-colors]
+  (let [effect-lst (some-> (spPr-block block)
+                           (->> (re-find #"<a:effectLst\b[^>]*>([\s\S]*?)</a:effectLst>"))
+                           second)
+        outer-open (some->> effect-lst (re-find #"<a:outerShdw\b[^>]*>"))
+        outer-body (some-> effect-lst
+                           (->> (re-find #"<a:outerShdw\b[^>]*>([\s\S]*?)</a:outerShdw>"))
+                           second)]
+    (when outer-open
+      (let [color (first-color outer-body theme-colors)
+            alpha (some-> (re-find #"<a:alpha\b[^>]*\bval=\"(\d+)\"" (or outer-body "")) second
+                          parse-double-safe (/ 1000.0))]
+        (cond-> {:blur (some-> (xml-attr outer-open "blurRad") parse-double-safe (/ 12700.0))
+                 :distance (some-> (xml-attr outer-open "dist") parse-double-safe (/ 12700.0))
+                 :angle (some-> (xml-attr outer-open "dir") parse-double-safe (/ 60000.0))}
+          color (assoc :color color)
+          alpha (assoc :alpha alpha))))))
+
 (defn- text-body [block]
   (second (or (re-find #"<p:txBody\b[^>]*>([\s\S]*?)</p:txBody>" (or block ""))
               (re-find #"<a:txBody\b[^>]*>([\s\S]*?)</a:txBody>" (or block "")))))
@@ -640,7 +667,8 @@
          (line-width block) (assoc :drawingml/line-width (line-width block))
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
-         (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block)))))))
+         (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
+         (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts))))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -665,7 +693,8 @@
        (line-width block) (assoc :drawingml/line-width (line-width block))
        (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
        (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
-       (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))))))
+       (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
+       (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))))))
 
 (defn pic-shape
   ([idx block] (pic-shape idx block {}))
