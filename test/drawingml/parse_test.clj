@@ -119,6 +119,20 @@
       (is (= [["Q1" "10"] ["Q2" "20"]] (:drawingml/rows shape)))
       (is (= "Q1\n10\nQ2\n20" (:drawingml/text shape))))))
 
+(deftest table-style-flags-test
+  (testing "only the flags actually set to \"1\" are captured"
+    (is (= {:first-row? true :band-col? true}
+           (dml/table-style-flags "<a:tbl><a:tblPr firstRow=\"1\" lastRow=\"0\" bandCol=\"1\"/>...</a:tbl>"))))
+  (testing "no <a:tblPr> at all, or one with no flags set -- nil"
+    (is (nil? (dml/table-style-flags "<a:tbl>...</a:tbl>")))
+    (is (nil? (dml/table-style-flags "<a:tbl><a:tblPr/>...</a:tbl>"))))
+  (testing "wired into table-shape as :drawingml/table-style-flags"
+    (let [flagged-table-block
+          (str "<a:tbl><a:tblPr firstRow=\"1\" bandRow=\"1\"/>"
+               "<a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>")]
+      (is (= {:first-row? true :band-row? true} (:drawingml/table-style-flags (dml/table-shape 0 flagged-table-block))))
+      (is (not (contains? (dml/table-shape 0 table-block) :drawingml/table-style-flags))))))
+
 (def merged-header-table-block
   "A 2-column table whose header row is one gridSpan=2 cell (with its own
   fill) followed by its hMerge continuation cell, and a plain data row

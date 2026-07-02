@@ -1098,6 +1098,28 @@
        (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))
        (picture-crop block) (assoc :drawingml/crop (picture-crop block))))))
 
+(defn table-style-flags
+  "A table's own <a:tblPr> style flags (firstRow/lastRow/firstCol/
+  lastCol/bandRow/bandCol, each present in the source XML as
+  attr=\"1\"), as {:first-row? true ...} with only the flags actually
+  set present. nil when NONE are set at all (an unstyled table, or one
+  whose table style itself carries all emphasis with no per-flag
+  override). Previously entirely unhandled -- table-shape's writer
+  UNCONDITIONALLY hardcoded firstRow+bandRow regardless of the source
+  table's own flags, so ANY imported table (e.g. one banding COLUMNS
+  instead of rows, or with no header-row emphasis at all) silently had
+  its actual style flags overwritten on export."
+  [block]
+  (when-let [tblpr (re-find #"<a:tblPr\b[^>]*>" (or block ""))]
+    (not-empty
+     (cond-> {}
+       (= "1" (xml-attr tblpr "firstRow")) (assoc :first-row? true)
+       (= "1" (xml-attr tblpr "lastRow")) (assoc :last-row? true)
+       (= "1" (xml-attr tblpr "firstCol")) (assoc :first-col? true)
+       (= "1" (xml-attr tblpr "lastCol")) (assoc :last-col? true)
+       (= "1" (xml-attr tblpr "bandRow")) (assoc :band-row? true)
+       (= "1" (xml-attr tblpr "bandCol")) (assoc :band-col? true)))))
+
 (defn table-shape
   ([idx block] (table-shape idx block {}))
   ([idx block opts]
@@ -1115,7 +1137,8 @@
                        :drawingml/color "17202A"}
                       (xfrm block opts))
          (seq rows) (assoc :drawingml/rows rows)
-         (table-non-uniform? cells) (assoc :drawingml/cells cells))))))
+         (table-non-uniform? cells) (assoc :drawingml/cells cells)
+         (table-style-flags block) (assoc :drawingml/table-style-flags (table-style-flags block)))))))
 
 (defn chart-shape
   ([idx block] (chart-shape idx block {}))
