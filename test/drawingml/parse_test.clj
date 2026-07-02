@@ -351,6 +351,28 @@
       (is (= [{:name "adj1" :fmla "val 10000"} {:name "adj2" :fmla "val 20000"}]
              (dml/shape-adjustments multi-adj-sp))))))
 
+(def shadowed-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill>
+     <a:effectLst><a:outerShdw blurRad=\"50800\" dist=\"25400\" dir=\"2700000\" rotWithShape=\"0\">
+       <a:srgbClr val=\"000000\"><a:alpha val=\"40000\"/></a:srgbClr>
+     </a:outerShdw></a:effectLst>
+   </p:spPr></p:sp>")
+
+(deftest shape-shadow-test
+  (testing "an outer shadow's blur/distance/angle/color/alpha are all read"
+    (let [shadow (dml/shape-shadow shadowed-rect-sp nil)]
+      (is (= 4.0 (:blur shadow)))
+      (is (= 2.0 (:distance shadow)))
+      (is (= 45.0 (:angle shadow)))
+      (is (= "000000" (:color shadow)))
+      (is (= 40.0 (:alpha shadow)))))
+  (testing "wired into rect-shape as :drawingml/shadow"
+    (is (some? (:drawingml/shadow (dml/rect-shape 0 shadowed-rect-sp)))))
+  (testing "no <a:effectLst> at all -- no shadow, no key added"
+    (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/shape-shadow plain-sp nil)))
+      (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/shadow))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
