@@ -381,6 +381,28 @@
          (some-> (side "r") pos?) (assoc :right (side "r"))
          (some-> (side "b") pos?) (assoc :bottom (side "b")))))))
 
+(defn picture-recolor
+  "A picture's own recolor effects, children of <a:blip> itself (not
+  <a:blipFill>) -- <a:grayscl/> (PowerPoint's Picture Format > Color >
+  Grayscale) and <a:alphaModFix amt=\"...\"/> (Washout/transparency,
+  amt a percentage of the ORIGINAL alpha in thousandths-of-a-percent
+  like this package's other percent fields), as {:grayscale? true
+  :alpha-mod pct}, only the effects actually present. A plain,
+  unmodified picture's <a:blip> is self-closing and carries neither, so
+  this only matches when <a:blip> has a paired closing tag at all.
+  Shared by both <p:pic> and a shape whose own fill is a picture, same
+  rationale as picture-crop. Previously entirely unhandled -- a
+  grayscale or washed-out picture round-tripped as if fully recolored
+  back to its original, unmodified appearance. nil when neither effect
+  is present, the overwhelming common case."
+  [block]
+  (when-let [blip-body (second (re-find #"<a:blip\b[^>]*>([\s\S]*?)</a:blip>" (or block "")))]
+    (let [alpha-mod (some-> (re-find #"<a:alphaModFix\b[^>]*/?>" blip-body) (xml-attr "amt") parse-double-safe (/ 1000.0))]
+      (not-empty
+       (cond-> {}
+         (re-find #"<a:grayscl\b" blip-body) (assoc :grayscale? true)
+         alpha-mod (assoc :alpha-mod alpha-mod))))))
+
 (defn solid-fill
   ([block] (solid-fill block nil))
   ([block theme-colors]
@@ -1012,6 +1034,7 @@
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (picture-crop block) (assoc :drawingml/crop (picture-crop block))
+         (picture-recolor block) (assoc :drawingml/recolor (picture-recolor block))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
          (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
@@ -1049,6 +1072,7 @@
          (blip-fill-rel-id block) (assoc :drawingml/fill-image-rel-id (blip-fill-rel-id block))
          (blip-fill-part block opts) (assoc :drawingml/fill-image-part (blip-fill-part block opts))
          (picture-crop block) (assoc :drawingml/crop (picture-crop block))
+         (picture-recolor block) (assoc :drawingml/recolor (picture-recolor block))
          (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
          (shape-shadow block (:theme-colors opts)) (assoc :drawingml/shadow (shape-shadow block (:theme-colors opts)))
          (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
@@ -1096,7 +1120,8 @@
        (:target-path (get (:rels opts) video-rel)) (assoc :drawingml/video-part (:target-path (get (:rels opts) video-rel)))
        audio-rel (assoc :drawingml/audio-rel-id audio-rel)
        (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))
-       (picture-crop block) (assoc :drawingml/crop (picture-crop block))))))
+       (picture-crop block) (assoc :drawingml/crop (picture-crop block))
+         (picture-recolor block) (assoc :drawingml/recolor (picture-recolor block))))))
 
 (defn table-style-flags
   "A table's own <a:tblPr> style flags (firstRow/lastRow/firstCol/

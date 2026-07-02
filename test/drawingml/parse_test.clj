@@ -668,6 +668,27 @@
     (let [cropped-fill-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:blipFill><a:blip r:embed=\"rId5\"/><a:srcRect l=\"25000\" r=\"25000\"/></a:blipFill></p:spPr></p:sp>"]
       (is (= {:left 25.0 :right 25.0} (:drawingml/crop (dml/rect-shape 0 cropped-fill-sp)))))))
 
+(def recolored-pic-sp
+  "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
+     <p:blipFill><a:blip r:embed=\"rId4\"><a:grayscl/><a:alphaModFix amt=\"50000\"/></a:blip></p:blipFill>
+     <p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"914400\" cy=\"914400\"/></a:xfrm></p:spPr>
+   </p:pic>")
+
+(deftest picture-recolor-test
+  (testing "grayscale + alpha modulation are both captured, alpha-mod as a plain percentage"
+    (is (= {:grayscale? true :alpha-mod 50.0} (dml/picture-recolor recolored-pic-sp))))
+  (testing "wired into pic-shape as :drawingml/recolor"
+    (is (= {:grayscale? true :alpha-mod 50.0} (:drawingml/recolor (dml/pic-shape 0 recolored-pic-sp)))))
+  (testing "only one of the two effects present"
+    (let [grayscale-only-sp "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rId4\"><a:grayscl/></a:blip></p:blipFill><p:spPr></p:spPr></p:pic>"]
+      (is (= {:grayscale? true} (dml/picture-recolor grayscale-only-sp)))))
+  (testing "a plain, self-closing <a:blip/> (the overwhelming common case) -- nil"
+    (is (nil? (dml/picture-recolor image-pic-sp)))
+    (is (not (contains? (dml/pic-shape 0 image-pic-sp) :drawingml/recolor))))
+  (testing "a picture-filled shape's own blip recolor is ALSO captured (shared blip path with <p:pic>)"
+    (let [recolored-fill-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:blipFill><a:blip r:embed=\"rId5\"><a:grayscl/></a:blip></a:blipFill></p:spPr></p:sp>"]
+      (is (= {:grayscale? true} (:drawingml/recolor (dml/rect-shape 0 recolored-fill-sp)))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
