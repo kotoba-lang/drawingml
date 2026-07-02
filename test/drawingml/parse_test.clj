@@ -300,6 +300,24 @@
       (is (nil? (dml/line-width no-width-sp)))
       (is (not (contains? (dml/rect-shape 0 no-width-sp) :drawingml/line-width))))))
 
+(def custom-adjusted-round-rect-sp
+  "<p:sp><p:spPr><a:prstGeom prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 8333\"/></a:avLst></a:prstGeom>
+     <a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill>
+   </p:spPr></p:sp>")
+
+(deftest shape-adjustments-test
+  (testing "a custom adjustment value (a non-default roundRect corner radius) is read verbatim"
+    (is (= [{:name "adj" :fmla "val 8333"}] (dml/shape-adjustments custom-adjusted-round-rect-sp)))
+    (is (= [{:name "adj" :fmla "val 8333"}] (:drawingml/adjustments (dml/rect-shape 0 custom-adjusted-round-rect-sp)))))
+  (testing "an empty <a:avLst/> (the common default-adjustment case) -- no key added"
+    (let [default-sp "<p:sp><p:spPr><a:prstGeom prst=\"roundRect\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/shape-adjustments default-sp)))
+      (is (not (contains? (dml/rect-shape 0 default-sp) :drawingml/adjustments)))))
+  (testing "multiple adjustment handles (a shape with 2+ adj values) all captured"
+    (let [multi-adj-sp "<p:sp><p:spPr><a:prstGeom prst=\"round2SameRect\"><a:avLst><a:gd name=\"adj1\" fmla=\"val 10000\"/><a:gd name=\"adj2\" fmla=\"val 20000\"/></a:avLst></a:prstGeom><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (= [{:name "adj1" :fmla "val 10000"} {:name "adj2" :fmla "val 20000"}]
+             (dml/shape-adjustments multi-adj-sp))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
