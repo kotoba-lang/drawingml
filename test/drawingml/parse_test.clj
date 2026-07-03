@@ -460,15 +460,28 @@
    </p:sp>")
 
 (deftest hyperlink-resolution-test
-  (testing "hlinkClick's r:id resolves through opts' :rels to the external URL"
+  (testing "hlinkClick's r:id resolves through opts' :rels to the external URL, gated on TargetMode=External"
     (let [shape (dml/text-shape 0 hyperlinked-run-sp
-                                {:rels {"rId3" {:id "rId3" :target-path "https://example.com/"}}})]
-      (is (= "https://example.com/" (:drawingml/hyperlink shape)))))
+                                {:rels {"rId3" {:id "rId3" :target-path "https://example.com/" :target-mode "External"}}})]
+      (is (= "https://example.com/" (:drawingml/hyperlink shape)))
+      (is (not (contains? shape :drawingml/hyperlink-slide-part)))))
   (testing "no :rels entry for the rel-id -- no hyperlink key added"
     (let [shape (dml/text-shape 0 hyperlinked-run-sp {})]
       (is (not (contains? shape :drawingml/hyperlink)))))
   (testing "no hlinkClick at all -- no hyperlink key added"
-    (let [shape (dml/text-shape 0 plain-run-sp {:rels {"rId3" {:target-path "https://example.com/"}}})]
+    (let [shape (dml/text-shape 0 plain-run-sp {:rels {"rId3" {:target-path "https://example.com/" :target-mode "External"}}})]
+      (is (not (contains? shape :drawingml/hyperlink))))))
+
+(deftest internal-slide-jump-hyperlink-test
+  (testing "a hyperlink whose relationship has NO TargetMode (Internal, the schema default) is captured as :drawingml/hyperlink-slide-part, NOT :drawingml/hyperlink"
+    (let [shape (dml/text-shape 0 hyperlinked-run-sp
+                                {:rels {"rId3" {:id "rId3" :target-path "ppt/slides/slide3.xml"}}})]
+      (is (= "ppt/slides/slide3.xml" (:drawingml/hyperlink-slide-part shape)))
+      (is (not (contains? shape :drawingml/hyperlink)))))
+  (testing "explicit TargetMode=\"Internal\" behaves the same as absent"
+    (let [shape (dml/text-shape 0 hyperlinked-run-sp
+                                {:rels {"rId3" {:id "rId3" :target-path "ppt/slides/slide3.xml" :target-mode "Internal"}}})]
+      (is (= "ppt/slides/slide3.xml" (:drawingml/hyperlink-slide-part shape)))
       (is (not (contains? shape :drawingml/hyperlink))))))
 
 (def dashed-line-rect-sp
