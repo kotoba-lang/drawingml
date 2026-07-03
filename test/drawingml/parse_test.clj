@@ -510,6 +510,37 @@
                                 {:theme-colors {:accent1 "4472C4"}})]
       (is (= "4472C4" (:drawingml/highlight shape))))))
 
+(def double-underlined-colored-run-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r>
+     <a:rPr u=\"dbl\"><a:uFill><a:srgbClr val=\"FF0000\"/></a:uFill></a:rPr>
+     <a:t>Double underlined</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(def plain-underlined-run-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r><a:rPr u=\"sng\"/><a:t>Plain underline</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(deftest underline-style-and-color-test
+  (testing "a non-default underline style and its own color are both read"
+    (let [shape (dml/text-shape 0 double-underlined-colored-run-sp)]
+      (is (true? (:drawingml/underline shape)))
+      (is (= :double (:drawingml/underline-style shape)))
+      (is (= "FF0000" (:drawingml/underline-color shape)))))
+  (testing "a plain u=\"sng\" underline has no underline-style/underline-color -- unchanged from before this feature existed"
+    (let [shape (dml/text-shape 0 plain-underlined-run-sp)]
+      (is (true? (:drawingml/underline shape)))
+      (is (not (contains? shape :drawingml/underline-style)))
+      (is (not (contains? shape :drawingml/underline-color)))))
+  (testing "no underline at all has neither key"
+    (let [shape (dml/text-shape 0 plain-run-sp)]
+      (is (not (contains? shape :drawingml/underline-style)))
+      (is (not (contains? shape :drawingml/underline-color)))))
+  (testing "an unrecognized u value keywordizes verbatim rather than throwing"
+    (let [shape (dml/text-shape 0 "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:rPr u=\"wavyDbl\"/><a:t>x</a:t></a:r></a:p></p:txBody></p:sp>")]
+      (is (= :wavy-double (:drawingml/underline-style shape))))))
+
 (def hyperlinked-run-sp
   "<p:sp><p:spPr></p:spPr>
    <p:txBody><a:p><a:r>

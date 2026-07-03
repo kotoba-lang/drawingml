@@ -44,6 +44,7 @@ round-trip tested end to end.
 | Text | Vertical text direction (`vert`: East Asian/WordArt-stacked/Mongolian) | ✅ read+write | |
 | Text | Run formatting (bold/italic/underline/strikethrough/baseline) | ✅ read+write | |
 | Text | Highlight color (`<a:highlight>`) + character spacing (`spc`) | ✅ read+write | added this session — highlight resolves `srgbClr`/`schemeClr` the same as any other color (`first-color`, scoped to the run's own `<a:rPr>` block); character spacing converts OOXML's raw hundredths-of-a-point `spc` to plain points |
+| Text | Underline style beyond single (`dbl`/`heavy`/`wavy`/etc) + underline's own color (`<a:uFill>`) | ✅ read+write | added this session — `underline-style`/`underline-color`; a plain `u="sng"` underline (the overwhelming common case) gets neither key, unchanged round-trip |
 | Text | Run language (CJK heuristic) | ✅ read+write | |
 | Text | Hyperlink: external URL | ✅ read+write | gated on the relationship's own `TargetMode="External"` |
 | Text | Hyperlink: internal same-deck slide jump | ✅ read+write | reference-metadata only (target slide's own part path); fixed a real bug this session where this case was misclassified/written as a broken external relationship |

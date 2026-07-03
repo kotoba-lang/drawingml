@@ -621,6 +621,27 @@
   (let [u (xml-attr (first-rpr block) "u")]
     (boolean (and u (not= "none" u)))))
 
+(def underline-style-map
+  "OOXML's raw `u` attribute values (besides \"sng\"/\"none\", already
+  covered by underline?'s plain boolean) mapped to friendlier keywords."
+  {"dbl" :double "heavy" :heavy "dotted" :dotted "dottedHeavy" :dotted-heavy
+   "dash" :dash "dashHeavy" :dash-heavy "dashLong" :dash-long "dashLongHeavy" :dash-long-heavy
+   "dotDash" :dot-dash "dotDashHeavy" :dot-dash-heavy "dotDotDash" :dot-dot-dash
+   "dotDotDashHeavy" :dot-dot-dash-heavy "wavy" :wavy "wavyHeavy" :wavy-heavy "wavyDbl" :wavy-double
+   "words" :words})
+
+(defn underline-style
+  "The run's specific underline style (:double/:heavy/:wavy/etc, from
+  OOXML's raw `u` attribute), when it's something OTHER than the plain
+  default single underline (\"sng\") underline?'s boolean already
+  covers. nil for \"sng\"/\"none\"/absent, so a plain underlined run's
+  round-trip output is unchanged (this key only appears alongside a
+  non-default style)."
+  [block]
+  (let [u (xml-attr (first-rpr block) "u")]
+    (when (and u (not= u "none") (not= u "sng"))
+      (get underline-style-map u (keyword u)))))
+
 (defn strikethrough? [block]
   (let [s (xml-attr (first-rpr block) "strike")]
     (boolean (and s (not= "noStrike" s)))))
@@ -659,6 +680,16 @@
   ([block theme-colors]
    (when-let [hl (re-find #"<a:highlight\b[^>]*>[\s\S]*?</a:highlight>" (or (first-rpr-block block) ""))]
      (first-color hl theme-colors))))
+
+(defn underline-color
+  "The run's <a:uFill> color -- the underline's OWN color, distinct from
+  the run's text color (<a:solidFill>), for when an underline is drawn
+  in a different color than the text itself. nil when absent (the
+  common case: the underline just uses the text's own color)."
+  ([block] (underline-color block nil))
+  ([block theme-colors]
+   (when-let [uf (re-find #"<a:uFill\b[^>]*>[\s\S]*?</a:uFill>" (or (first-rpr-block block) ""))]
+     (first-color uf theme-colors))))
 
 (defn hyperlink-url
   "The run's hyperlink target URL, resolved through opts' :rels (the same
@@ -1209,6 +1240,8 @@
          (bold? block) (assoc :drawingml/bold true)
          (italic? block) (assoc :drawingml/italic true)
          (underline? block) (assoc :drawingml/underline true)
+         (underline-style block) (assoc :drawingml/underline-style (underline-style block))
+         (underline-color block (:theme-colors opts)) (assoc :drawingml/underline-color (underline-color block (:theme-colors opts)))
          (strikethrough? block) (assoc :drawingml/strikethrough true)
          (baseline block) (assoc :drawingml/baseline (baseline block))
          (char-spacing block) (assoc :drawingml/char-spacing (char-spacing block))
