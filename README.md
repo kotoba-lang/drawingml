@@ -38,6 +38,7 @@ round-trip tested end to end.
 | Media | Video/audio playback options (loop/rewind/volume) | ❌ not implemented | |
 | Media | Picture lock flags (`picLocks`: noChangeAspect/noMove/noResize/noRot) | ✅ read+write | fixed a real bug this session — the writer previously hardcoded `noChangeAspect="1"` regardless of the source picture's actual lock state |
 | Text | Paragraph align/level/margin-left/line-spacing | ✅ read+write | |
+| Text | Paragraph right-to-left direction (`rtl`) | ✅ read + full regen write only | added this session — full-regen only, matching every other paragraph-level property (align/bullet/level/margin-left/tab-stops): the `update` patch path always copies a paragraph's own `<a:pPr>` through untouched by design, so paragraph-level properties aren't independently patchable |
 | Text | Bullets: char/none/auto-numbered incl. `startAt` | ✅ read+write | |
 | Text | Tab stops (`tabLst`) | ✅ read+write | |
 | Text | Text body autofit/wrap/anchor/margins | ✅ read+write | |

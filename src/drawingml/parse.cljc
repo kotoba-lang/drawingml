@@ -835,6 +835,15 @@
   (when pPr
     (some-> (xml-attr pPr "lvl") parse-double-safe long)))
 
+(defn- paragraph-rtl
+  "A paragraph's own right-to-left direction, from <a:pPr rtl=\"1\">, or
+  nil for the schema default (left-to-right, absent/\"0\") -- so this
+  key only appears for a genuinely RTL paragraph, and an unmodified
+  left-to-right deck's round-trip output is unchanged."
+  [pPr]
+  (when (and pPr (= "1" (xml-attr pPr "rtl")))
+    true))
+
 (defn- paragraph-margin-left
   "A paragraph's own explicit left margin/indent, from <a:pPr marL=\"...\">
   (EMU), in inches. PowerPoint normally derives this from the paragraph's
@@ -884,14 +893,16 @@
                line-spacing (paragraph-line-spacing pPr)
                level (paragraph-level pPr)
                margin-left (paragraph-margin-left pPr)
-               tab-stops (paragraph-tab-stops pPr)]]
+               tab-stops (paragraph-tab-stops pPr)
+               rtl (paragraph-rtl pPr)]]
      (cond-> {:text (paragraph-text p-block)}
        align (assoc :align align)
        bullet (assoc :bullet bullet)
        line-spacing (assoc :line-spacing line-spacing)
        level (assoc :level level)
        margin-left (assoc :margin-left margin-left)
-       tab-stops (assoc :tab-stops tab-stops)))))
+       tab-stops (assoc :tab-stops tab-stops)
+       rtl (assoc :rtl rtl)))))
 
 (defn- non-uniform-dimensions
   "`ds`, a seq of inch values, kept as a vector only when they're NOT all

@@ -115,6 +115,24 @@
     (testing "no marL at all -- :margin-left absent (level's own default margin applies, not re-derived here)"
       (is (not (contains? (nth paras 1) :margin-left))))))
 
+(def rtl-and-ltr-paragraphs-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody>
+     <a:p><a:pPr rtl=\"1\"/><a:r><a:t>مرحبا</a:t></a:r></a:p>
+     <a:p><a:pPr/><a:r><a:t>Plain LTR</a:t></a:r></a:p>
+     <a:p><a:r><a:t>No pPr at all</a:t></a:r></a:p>
+   </p:txBody>
+   </p:sp>")
+
+(deftest paragraph-rtl-test
+  (let [paras (dml/paragraphs rtl-and-ltr-paragraphs-sp)]
+    (testing "rtl=\"1\" is captured as :rtl true"
+      (is (true? (:rtl (nth paras 0)))))
+    (testing "an explicit <a:pPr/> with no rtl attribute has no :rtl key -- the schema default (LTR), not false"
+      (is (not (contains? (nth paras 1) :rtl))))
+    (testing "no <a:pPr> at all has no :rtl key either"
+      (is (not (contains? (nth paras 2) :rtl))))))
+
 (def table-block
   "<a:tbl>
     <a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc>
