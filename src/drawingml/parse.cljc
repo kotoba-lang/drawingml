@@ -735,6 +735,29 @@
   (when pPr
     (some-> (xml-attr pPr "marL") parse-double-safe (/ emu-per-inch))))
 
+(defn- paragraph-tab-stops
+  "A paragraph's own explicit tab stops, <a:pPr>'s <a:tabLst><a:tab
+  pos=\"...\" algn=\"l|ctr|r|dec\"/>...</a:tabLst>, as a vector of
+  {:position inches :align :left/:center/:right/:decimal} (align only
+  when non-default -- \"l\" IS the schema default, so it's dropped same
+  as this package's other absent-means-default fields), in document
+  order. Previously entirely unhandled -- a paragraph with explicit tab
+  stops (e.g. a numbered item's tab before an aligned value, or a
+  table-of-contents-style dot-leader layout) always round-tripped
+  losing them, falling back to the layout/master's own implicit default
+  tab stops. nil when the paragraph has no <a:tabLst> at all, the
+  overwhelming common case."
+  [pPr]
+  (when pPr
+    (when-let [tab-lst-body (second (re-find #"<a:tabLst\b[^>]*>([\s\S]*?)</a:tabLst>" pPr))]
+      (not-empty
+       (vec (for [tab-tag (re-seq #"<a:tab\b[^>]*/?>" tab-lst-body)
+                  :let [position (some-> (xml-attr tab-tag "pos") parse-double-safe (/ emu-per-inch))
+                        align (case (xml-attr tab-tag "algn") "ctr" :center "r" :right "dec" :decimal nil)]
+                  :when position]
+              (cond-> {:position position}
+                align (assoc :align align))))))))
+
 (defn paragraphs
   "Structured per-paragraph extraction (text + alignment + bullet + line-
   spacing), alongside (not replacing) the flattened text `paragraphs-text`
@@ -749,13 +772,15 @@
                bullet (paragraph-bullet pPr)
                line-spacing (paragraph-line-spacing pPr)
                level (paragraph-level pPr)
-               margin-left (paragraph-margin-left pPr)]]
+               margin-left (paragraph-margin-left pPr)
+               tab-stops (paragraph-tab-stops pPr)]]
      (cond-> {:text (paragraph-text p-block)}
        align (assoc :align align)
        bullet (assoc :bullet bullet)
        line-spacing (assoc :line-spacing line-spacing)
        level (assoc :level level)
-       margin-left (assoc :margin-left margin-left)))))
+       margin-left (assoc :margin-left margin-left)
+       tab-stops (assoc :tab-stops tab-stops)))))
 
 (defn table-rows
   "The table's cell grid as rows of paragraph-aware cell text, reading <a:tr>
