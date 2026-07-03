@@ -636,11 +636,36 @@
 (defn hyperlink-url
   "The run's hyperlink target URL, resolved through opts' :rels (the same
   slide-relationship map chart-shape already uses for chart-rel-id) --
-  resolve-target passes an external URL (TargetMode=\"External\", the normal
-  case for a hyperlink) through unchanged, so target-path already holds it."
+  ONLY for an external hyperlink (the relationship's own TargetMode=
+  \"External\", the normal case for a web/email link). nil for an internal
+  same-deck \"jump to slide\" link (TargetMode absent -- Internal is the
+  schema default for a same-package relationship); see hyperlink-slide-part
+  for that case. Previously ungated on TargetMode at all -- an internal
+  jump-to-slide link's raw relative Target (e.g. \"slide3.xml\", resolved
+  to a package path by resolve-target) was captured here as if it were a
+  URL, silently misrepresenting it."
   [block opts]
   (when-let [rel-id (hyperlink-rel-id block)]
-    (get-in (:rels opts) [rel-id :target-path])))
+    (let [rel (get (:rels opts) rel-id)]
+      (when (= "External" (:target-mode rel))
+        (:target-path rel)))))
+
+(defn hyperlink-slide-part
+  "A run's own internal \"jump to slide\" hyperlink, resolved through
+  opts' :rels -- the target slide's own package part path (e.g.
+  \"ppt/slides/slide3.xml\"), when the relationship's own TargetMode is
+  absent/Internal (the schema default for a same-package hyperlink).
+  Reference-metadata only, same pattern as image-part/chart-part -- the
+  raw part path, not resolved to a slide index/identity. Previously
+  entirely unhandled -- an internal jump-to-slide link always round-
+  tripped as if it were an external URL (via hyperlink-url, before its
+  own TargetMode gating existed), and on re-export got written back as
+  an invalid external relationship pointing at a bare internal filename."
+  [block opts]
+  (when-let [rel-id (hyperlink-rel-id block)]
+    (let [rel (get (:rels opts) rel-id)]
+      (when (and rel (not= "External" (:target-mode rel)))
+        (:target-path rel)))))
 
 (defn- paragraph-text
   "A single <a:p>'s own text: its runs concatenated with no separator (they
@@ -1052,6 +1077,7 @@
          (strikethrough? block) (assoc :drawingml/strikethrough true)
          (baseline block) (assoc :drawingml/baseline (baseline block))
          (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
+         (hyperlink-slide-part block opts) (assoc :drawingml/hyperlink-slide-part (hyperlink-slide-part block opts))
          (line-dash block) (assoc :drawingml/line-dash (line-dash block))
          (line-width block) (assoc :drawingml/line-width (line-width block))
          (line-cap block) (assoc :drawingml/line-cap (line-cap block))
