@@ -1041,17 +1041,31 @@
                   :when (and gd-name fmla)]
               {:name gd-name :fmla fmla}))))))
 
+(def text-vertical-values
+  "<a:bodyPr>'s own vert=\"...\" values (vertical text layout -- East Asian
+  vertical writing, WordArt-style stacked text, Mongolian vertical layout),
+  each mapped to a keyword."
+  {"vert" :vert
+   "vert270" :vert270
+   "wordArtVert" :word-art-vert
+   "eaVert" :ea-vert
+   "mongolianVert" :mongolian-vert
+   "wordArtVertRtl" :word-art-vert-rtl})
+
 (defn text-body-props
   "A shape's own <a:bodyPr> (word-wrap, vertical anchor, internal margins,
-  autofit) -- previously entirely unread. <a:bodyPr wrap=\"square\"> was
-  ALWAYS hardcoded on write regardless of source, silently discarding
-  wrap=\"none\" (no-wrap text boxes), any non-default vertical anchor
-  (PowerPoint's own vertical-center/-bottom text alignment), custom
-  internal margins, and shrink-to-fit/resize-shape-to-fit autofit -- all
-  common in real hand-authored decks. Only non-default values are
-  captured (same \"absent means default\" convention as align/bullet/
-  line-spacing elsewhere in this file), so a plain shape round-trips
-  unchanged. nil for a shape with no <a:bodyPr> at all."
+  autofit, vertical text direction) -- previously entirely unread. <a:bodyPr
+  wrap=\"square\"> was ALWAYS hardcoded on write regardless of source,
+  silently discarding wrap=\"none\" (no-wrap text boxes), any non-default
+  vertical anchor (PowerPoint's own vertical-center/-bottom text
+  alignment), custom internal margins, shrink-to-fit/resize-shape-to-fit
+  autofit, and vertical text layout (vert=\"vert\"/\"vert270\"/
+  \"wordArtVert\"/... -- East Asian vertical writing or WordArt-style
+  stacked text) -- all common in real hand-authored decks. Only
+  non-default values are captured (same \"absent means default\"
+  convention as align/bullet/line-spacing elsewhere in this file), so a
+  plain shape round-trips unchanged. nil for a shape with no <a:bodyPr>
+  at all."
   [block]
   (when-let [tag-xml (or (re-find #"<a:bodyPr\b[^>]*>[\s\S]*?</a:bodyPr>" (or block ""))
                          (re-find #"<a:bodyPr\b[^>]*/>" (or block "")))]
@@ -1076,7 +1090,9 @@
          (xp/el-attr norm-autofit "fontScale")
          (assoc :font-scale (some-> (xp/el-attr norm-autofit "fontScale") parse-double-safe (/ 1000.0)))
          (xp/el-attr norm-autofit "lnSpcReduction")
-         (assoc :line-spacing-reduction (some-> (xp/el-attr norm-autofit "lnSpcReduction") parse-double-safe (/ 1000.0))))))))
+         (assoc :line-spacing-reduction (some-> (xp/el-attr norm-autofit "lnSpcReduction") parse-double-safe (/ 1000.0)))
+         (get text-vertical-values (xp/el-attr tag "vert"))
+         (assoc :vertical (get text-vertical-values (xp/el-attr tag "vert"))))))))
 
 (defn text-shape
   "A shape with a text label. When it also has a non-default geometry
