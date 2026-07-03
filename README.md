@@ -41,6 +41,7 @@ round-trip tested end to end.
 | Text | Bullets: char/none/auto-numbered incl. `startAt` | ✅ read+write | |
 | Text | Tab stops (`tabLst`) | ✅ read+write | |
 | Text | Text body autofit/wrap/anchor/margins | ✅ read+write | |
+| Text | Vertical text direction (`vert`: East Asian/WordArt-stacked/Mongolian) | ✅ read+write | |
 | Text | Run formatting (bold/italic/underline/strikethrough/baseline) | ✅ read+write | |
 | Text | Run language (CJK heuristic) | ✅ read+write | |
 | Text | Hyperlink: external URL | ✅ read+write | gated on the relationship's own `TargetMode="External"` |
@@ -55,6 +56,7 @@ round-trip tested end to end.
 | Connector | Geometry/line | ✅ read+write | |
 | Connector | Shape-to-shape connections (`stCxn`/`endCxn`) | ✅ read+write | |
 | Shape flags | Hidden (`cNvPr hidden="1"`) | ✅ read+write | |
+| Shape flags | Lock flags (`spLocks`: noGrp/noRot/noChangeAspect/noMove/noResize/noSelect) | ✅ read+write | fixed a real bug this session — the writer previously emitted a bare `<p:cNvSpPr/>` with no lock element at all regardless of the source shape's actual lock state; sibling of the `picLocks` fix above |
 | Deferred subsystems | SmartArt (`p:dgm`) | ❌ out of scope | large independent subsystem, not started |
 | Deferred subsystems | OLE embedded objects | ❌ out of scope | large independent subsystem, not started |
 | Deferred subsystems | Animations (`p:timing`) | ❌ out of scope | large independent subsystem, not started |
