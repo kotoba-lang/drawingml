@@ -662,6 +662,17 @@
     (is (= :shrink (:autofit (:drawingml/body-props (dml/text-shape 0 full-body-pr-sp)))))
     (is (not (contains? (dml/text-shape 0 plain-body-pr-sp) :drawingml/body-props)))))
 
+(deftest text-vertical-direction-test
+  (testing "each vert value maps to its own keyword"
+    (doseq [[attr kw] {"vert" :vert "vert270" :vert270 "wordArtVert" :word-art-vert
+                       "eaVert" :ea-vert "mongolianVert" :mongolian-vert "wordArtVertRtl" :word-art-vert-rtl}]
+      (let [vert-sp (str "<p:sp><p:spPr></p:spPr><p:txBody><a:bodyPr vert=\"" attr "\"/>"
+                         "<a:lstStyle/><a:p><a:r><a:t>Vertical</a:t></a:r></a:p></p:txBody></p:sp>")]
+        (is (= {:vertical kw} (dml/text-body-props vert-sp)))
+        (is (= kw (:vertical (:drawingml/body-props (dml/text-shape 0 vert-sp))))))))
+  (testing "no vert attribute (horz, the schema default) -- no :vertical key at all"
+    (is (nil? (dml/text-body-props plain-body-pr-sp)))))
+
 (def image-pic-sp
   "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
      <p:blipFill><a:blip r:embed=\"rId4\"/></p:blipFill>
