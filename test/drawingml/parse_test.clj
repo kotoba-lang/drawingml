@@ -261,7 +261,17 @@
                       "</a:tr></a:tbl>")
                  nil)]
       (is (= :center (get-in (first cells) [0 :anchor])))
-      (is (= "Plain" (get-in cells [0 1]))))))
+      (is (= "Plain" (get-in cells [0 1])))))
+  (testing "vert (rotated cell text) is captured via the same value set as <a:bodyPr>'s own vert"
+    (is (= {:vertical :vert270} (dml/table-cell-margins-and-anchor "<a:tc><a:tcPr vert=\"vert270\"/></a:tc>")))
+    (let [cells (dml/table-cells
+                 (str "<a:tbl><a:tr>"
+                      "<a:tc><a:txBody><a:p><a:r><a:t>Qty</a:t></a:r></a:p></a:txBody>"
+                      "<a:tcPr vert=\"vert270\"/></a:tc>"
+                      "<a:tc><a:txBody><a:p><a:r><a:t>Plain</a:t></a:r></a:p></a:txBody></a:tc>"
+                      "</a:tr></a:tbl>")
+                 nil)]
+      (is (= :vert270 (get-in (first cells) [0 :vertical]))))))
 
 (def round-rect-themed-fill-with-text
   "A roundRect AutoShape (not :rect geometry) with a themed SHAPE fill and a

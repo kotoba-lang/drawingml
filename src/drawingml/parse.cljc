@@ -931,30 +931,47 @@
        (table-cell-border-side tcPr "lnTlToBr" theme-colors) (assoc :diagonal-down (table-cell-border-side tcPr "lnTlToBr" theme-colors))
        (table-cell-border-side tcPr "lnBlToRt" theme-colors) (assoc :diagonal-up (table-cell-border-side tcPr "lnBlToRt" theme-colors))))))
 
+(def text-vertical-values
+  "<a:bodyPr>'s own vert=\"...\" values (vertical text layout -- East Asian
+  vertical writing, WordArt-style stacked text, Mongolian vertical layout),
+  each mapped to a keyword. Shared with <a:tcPr>'s own vert attribute
+  (table-cell-margins-and-anchor) -- same value set, same schema."
+  {"vert" :vert
+   "vert270" :vert270
+   "wordArtVert" :word-art-vert
+   "eaVert" :ea-vert
+   "mongolianVert" :mongolian-vert
+   "wordArtVertRtl" :word-art-vert-rtl})
+
 (defn table-cell-margins-and-anchor
-  "A cell's own <a:tcPr> margin/anchor attributes (marL/marR/marT/marB in
-  EMU -> inches, anchor -> :top/:center/:bottom vertical text alignment),
-  as {:margin-left/:margin-right/:margin-top/:margin-bottom in :anchor}
-  with only the attributes actually present -- matches on <a:tcPr>'s own
-  OPENING tag text so a SELF-CLOSING <a:tcPr .../> (a cell with margin/
-  anchor overrides but no border/fill children) is captured too, unlike
-  table-cell-borders/table-cell-fill which need a paired tag's inner body
-  and so only ever see the paired form. nil for a cell with no margin/
-  anchor overrides at all, the overwhelming common case (PowerPoint's own
-  default margins and top-anchored text apply). Previously unread
-  anywhere -- a vertically-centered or custom-margin cell (common in
-  real decks) always round-tripped as if using PowerPoint's own defaults."
+  "A cell's own <a:tcPr> margin/anchor/vert attributes (marL/marR/marT/marB
+  in EMU -> inches, anchor -> :top/:center/:bottom vertical text alignment,
+  vert -> :vertical rotated-text layout via the same text-vertical-values
+  map as <a:bodyPr>'s own vert), as {:margin-left/:margin-right/
+  :margin-top/:margin-bottom/:anchor/:vertical} with only the attributes
+  actually present -- matches on <a:tcPr>'s own OPENING tag text so a
+  SELF-CLOSING <a:tcPr .../> (a cell with margin/anchor/vert overrides but
+  no border/fill children) is captured too, unlike table-cell-borders/
+  table-cell-fill which need a paired tag's inner body and so only ever
+  see the paired form. nil for a cell with no margin/anchor/vert
+  overrides at all, the overwhelming common case (PowerPoint's own
+  default margins, top-anchored, horizontal text apply). vert was
+  previously unread anywhere -- a rotated header cell (e.g. a narrow
+  \"Qty\" column with vert270 text, a common real-deck pattern) always
+  round-tripped losing that rotation, rendering horizontal instead."
   [cell-block]
   (when-let [tcpr-open (re-find #"<a:tcPr\b[^>]*>" (or cell-block ""))]
     (let [margin (fn [attr] (some-> (xml-attr tcpr-open attr) parse-double-safe (/ emu-per-inch)))
-          anchor (case (xml-attr tcpr-open "anchor") "t" :top "ctr" :center "b" :bottom nil)]
+          anchor (case (xml-attr tcpr-open "anchor") "t" :top "ctr" :center "b" :bottom nil)
+          vertical (get text-vertical-values (xml-attr tcpr-open "vert"))]
       (not-empty
        (cond-> {}
          (margin "marL") (assoc :margin-left (margin "marL"))
          (margin "marR") (assoc :margin-right (margin "marR"))
          (margin "marT") (assoc :margin-top (margin "marT"))
          (margin "marB") (assoc :margin-bottom (margin "marB"))
-         anchor (assoc :anchor anchor))))))
+         anchor (assoc :anchor anchor)
+         vertical (assoc :vertical vertical))))))
 
 (defn table-cells
   "The table's cell grid, one entry per <a:tc> in document order, each
@@ -1078,17 +1095,6 @@
                   :let [gd-name (xp/el-attr gd "name") fmla (xp/el-attr gd "fmla")]
                   :when (and gd-name fmla)]
               {:name gd-name :fmla fmla}))))))
-
-(def text-vertical-values
-  "<a:bodyPr>'s own vert=\"...\" values (vertical text layout -- East Asian
-  vertical writing, WordArt-style stacked text, Mongolian vertical layout),
-  each mapped to a keyword."
-  {"vert" :vert
-   "vert270" :vert270
-   "wordArtVert" :word-art-vert
-   "eaVert" :ea-vert
-   "mongolianVert" :mongolian-vert
-   "wordArtVertRtl" :word-art-vert-rtl})
 
 (defn text-body-props
   "A shape's own <a:bodyPr> (word-wrap, vertical anchor, internal margins,
