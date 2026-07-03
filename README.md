@@ -51,7 +51,9 @@ round-trip tested end to end.
 | Table | Cell borders (straight: L/R/T/B + diagonal: TL-BR/BL-TR) | ✅ read+write | |
 | Table | Cell margins + vertical anchor | ✅ read+write | |
 | Table | Table style flags (firstRow/lastRow/firstCol/lastCol/bandRow/bandCol) | ✅ read+write | fixed a real bug this session — the writer previously hardcoded firstRow+bandRow regardless of source |
+| Table | Column widths / row heights (`gridCol`/`tr` dimensions) | ❌ not implemented | writer always recomputes even division; an imported table with deliberately uneven widths loses that on regen |
 | Chart | Rel-id + chart part + embedded workbook part | ✅ read+write | reference-metadata only |
+| Chart/Table | Graphic frame lock flags (`graphicFrameLocks`: noGrp/noDrilldown/noSelect/noChangeAspect/noMove/noResize) | ✅ read+write | fixed a real bug this session — the writer previously hardcoded `noGrp="1"` regardless of the source table/chart's actual lock state; sibling of the `picLocks`/`spLocks` fixes |
 | Chart | Chart type, series data, legend, axis titles, data labels | ❌ out of scope for this repo | the chart's own XML (`c:chartSpace`) is parsed nowhere in this package; `slides` writes chart content directly (type/series/legend/axis-titles) with no round-trip reader anywhere |
 | Connector | Geometry/line | ✅ read+write | |
 | Connector | Shape-to-shape connections (`stCxn`/`endCxn`) | ✅ read+write | |
