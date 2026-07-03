@@ -1094,6 +1094,26 @@
          (get text-vertical-values (xp/el-attr tag "vert"))
          (assoc :vertical (get text-vertical-values (xp/el-attr tag "vert"))))))))
 
+(defn shape-locks
+  "A text/rect shape's own <p:cNvSpPr><a:spLocks .../> flags (noGrp/noRot/
+  noChangeAspect/noMove/noResize/noSelect, each present in the source XML
+  as attr=\"1\"), as {:no-grp? true ...} with only the flags actually set
+  present. Same pattern as picture-locks, sibling element. Previously
+  never read anywhere -- the writer unconditionally hardcodes noGrp=\"1\"
+  regardless of the source shape's actual lock state, so a shape the
+  source deck left ungrouped-lockable always exports group-locked. nil
+  when the shape has no lock flags at all."
+  [block]
+  (when-let [locks-tag (re-find #"<a:spLocks\b[^>]*/?>" (or block ""))]
+    (not-empty
+     (cond-> {}
+       (= "1" (xml-attr locks-tag "noGrp")) (assoc :no-grp? true)
+       (= "1" (xml-attr locks-tag "noRot")) (assoc :no-rot? true)
+       (= "1" (xml-attr locks-tag "noChangeAspect")) (assoc :no-change-aspect? true)
+       (= "1" (xml-attr locks-tag "noMove")) (assoc :no-move? true)
+       (= "1" (xml-attr locks-tag "noResize")) (assoc :no-resize? true)
+       (= "1" (xml-attr locks-tag "noSelect")) (assoc :no-select? true)))))
+
 (defn text-shape
   "A shape with a text label. When it also has a non-default geometry
   (roundRect, oval, ...) and/or its own fill/line, those are carried too
@@ -1148,7 +1168,8 @@
          (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block))
          (text-body-props block) (assoc :drawingml/body-props (text-body-props block))
          (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts)))
-         (shape-hidden? block) (assoc :drawingml/hidden true))))))
+         (shape-hidden? block) (assoc :drawingml/hidden true)
+         (shape-locks block) (assoc :drawingml/locks (shape-locks block)))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -1186,7 +1207,8 @@
          (shape-reflection block) (assoc :drawingml/reflection (shape-reflection block))
          custom (assoc :drawingml/custom-geometry custom)
          (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts)))
-         (shape-hidden? block) (assoc :drawingml/hidden true))))))
+         (shape-hidden? block) (assoc :drawingml/hidden true)
+         (shape-locks block) (assoc :drawingml/locks (shape-locks block)))))))
 
 (defn pic-blip-rel-id
   "A <p:pic>'s own image, <a:blipFill><a:blip r:embed=\"...\"/>. Previously

@@ -751,6 +751,20 @@
     (is (nil? (dml/picture-locks image-pic-sp)))
     (is (not (contains? (dml/pic-shape 0 image-pic-sp) :drawingml/locks)))))
 
+(deftest shape-locks-test
+  (testing "only the flags actually set to \"1\" are captured, wired into text-shape and rect-shape as :drawingml/locks"
+    (let [locked-text-sp (str "<p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"TextBox\"/>"
+                              "<p:cNvSpPr><a:spLocks noGrp=\"1\" noRot=\"1\"/></p:cNvSpPr><p:nvPr/></p:nvSpPr>"
+                              "<p:spPr><a:prstGeom prst=\"rect\"/></p:spPr>"
+                              "<p:txBody><a:p><a:r><a:t>Locked</a:t></a:r></a:p></p:txBody></p:sp>")]
+      (is (= {:no-grp? true :no-rot? true} (dml/shape-locks locked-text-sp)))
+      (is (= {:no-grp? true :no-rot? true} (:drawingml/locks (dml/text-shape 0 locked-text-sp))))
+      (is (= {:no-grp? true :no-rot? true} (:drawingml/locks (dml/rect-shape 0 locked-text-sp))))))
+  (testing "a plain shape (no <a:spLocks> at all) -- nil, no key added"
+    (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
+      (is (nil? (dml/shape-locks plain-sp)))
+      (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/locks))))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
