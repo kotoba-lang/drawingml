@@ -824,3 +824,27 @@
     (let [plain-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></p:spPr></p:sp>"]
       (is (nil? (dml/custom-geometry plain-sp)))
       (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/custom-geometry))))))
+
+(deftest shape-hidden-test
+  (testing "a text-shape's own <p:cNvPr hidden=\"1\"/> is captured"
+    (let [hidden-text-sp "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Note\" hidden=\"1\"/></p:nvSpPr><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Hidden text</a:t></a:r></a:p></p:txBody></p:sp>"]
+      (is (true? (:drawingml/hidden (dml/text-shape 0 hidden-text-sp))))))
+  (testing "a rect-shape's own <p:cNvPr hidden=\"1\"/> is captured"
+    (let [hidden-rect-sp "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Box\" hidden=\"1\"/></p:nvSpPr><p:spPr><a:prstGeom prst=\"rect\"/></p:spPr></p:sp>"]
+      (is (true? (:drawingml/hidden (dml/rect-shape 0 hidden-rect-sp))))))
+  (testing "a pic-shape's own <p:cNvPr hidden=\"1\"/> is captured"
+    (let [hidden-pic-sp "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\" hidden=\"1\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rId4\"/></p:blipFill><p:spPr></p:spPr></p:pic>"]
+      (is (true? (:drawingml/hidden (dml/pic-shape 0 hidden-pic-sp))))))
+  (testing "a table-shape's own <p:cNvPr hidden=\"1\"/> (on the graphicFrame wrapper) is captured"
+    (let [hidden-table-sp (str "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"4\" name=\"Table\" hidden=\"1\"/></p:nvGraphicFramePr>"
+                               "<a:graphic><a:graphicData><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Cell</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>")]
+      (is (true? (:drawingml/hidden (dml/table-shape 0 hidden-table-sp))))))
+  (testing "a connector-shape's own <p:cNvPr hidden=\"1\"/> is captured"
+    (let [hidden-cxn-sp "<p:cxnSp><p:nvCxnSpPr><p:cNvPr id=\"5\" name=\"Arrow\" hidden=\"1\"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr></p:spPr></p:cxnSp>"]
+      (is (true? (:drawingml/hidden (dml/connector-shape 0 hidden-cxn-sp))))))
+  (testing "no hidden attribute at all -- no :drawingml/hidden key, the overwhelming common case"
+    (let [plain-text-sp "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Visible</a:t></a:r></a:p></p:txBody></p:sp>"]
+      (is (not (contains? (dml/text-shape 0 plain-text-sp) :drawingml/hidden)))))
+  (testing "hidden=\"0\" is explicit-but-false -- treated the same as absent"
+    (let [not-hidden-sp "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Note\" hidden=\"0\"/></p:nvSpPr><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Visible</a:t></a:r></a:p></p:txBody></p:sp>"]
+      (is (not (contains? (dml/text-shape 0 not-hidden-sp) :drawingml/hidden))))))

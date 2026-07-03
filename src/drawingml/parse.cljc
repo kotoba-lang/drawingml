@@ -86,6 +86,16 @@
   (or (xml-attr (or (re-find #"<p:cNvPr\b[^>]*>" (or block "")) "") "name")
       (str fallback "-" (inc idx))))
 
+(defn shape-hidden?
+  "A shape's own <p:cNvPr hidden=\"1\"/> -- PowerPoint's own \"Hide\" toggle
+  (Format > Selection Pane > eye icon), distinct from simply not being on
+  the visible layout. Previously entirely unhandled -- a hidden shape
+  (a common real-deck pattern: reference/backup content kept in the deck
+  but not shown, or animation-only content) always round-tripped as
+  visible, silently changing the deck's actual rendered appearance."
+  [block]
+  (= "1" (xml-attr (or (re-find #"<p:cNvPr\b[^>]*>" (or block "")) "") "hidden")))
+
 (defn placeholder [block]
   (when-let [ph (re-find #"<p:ph\b[^>]*/?>" (or block ""))]
     (cond-> {}
@@ -1092,7 +1102,8 @@
          (shape-reflection block) (assoc :drawingml/reflection (shape-reflection block))
          (custom-geometry block) (assoc :drawingml/custom-geometry (custom-geometry block))
          (text-body-props block) (assoc :drawingml/body-props (text-body-props block))
-         (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts))))))))
+         (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts)))
+         (shape-hidden? block) (assoc :drawingml/hidden true))))))
 
 (defn rect-shape
   "A styled AutoShape with NO text label. Matches any recognized
@@ -1129,7 +1140,8 @@
          (shape-glow block (:theme-colors opts)) (assoc :drawingml/glow (shape-glow block (:theme-colors opts)))
          (shape-reflection block) (assoc :drawingml/reflection (shape-reflection block))
          custom (assoc :drawingml/custom-geometry custom)
-         (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts))))))))
+         (gradient-fill block (:theme-colors opts)) (assoc :drawingml/gradient (gradient-fill block (:theme-colors opts)))
+         (shape-hidden? block) (assoc :drawingml/hidden true))))))
 
 (defn pic-blip-rel-id
   "A <p:pic>'s own image, <a:blipFill><a:blip r:embed=\"...\"/>. Previously
@@ -1172,7 +1184,8 @@
        audio-rel (assoc :drawingml/audio-rel-id audio-rel)
        (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))
        (picture-crop block) (assoc :drawingml/crop (picture-crop block))
-         (picture-recolor block) (assoc :drawingml/recolor (picture-recolor block))))))
+       (picture-recolor block) (assoc :drawingml/recolor (picture-recolor block))
+       (shape-hidden? block) (assoc :drawingml/hidden true)))))
 
 (defn table-style-flags
   "A table's own <a:tblPr> style flags (firstRow/lastRow/firstCol/
@@ -1214,7 +1227,8 @@
                       (xfrm block opts))
          (seq rows) (assoc :drawingml/rows rows)
          (table-non-uniform? cells) (assoc :drawingml/cells cells)
-         (table-style-flags block) (assoc :drawingml/table-style-flags (table-style-flags block)))))))
+         (table-style-flags block) (assoc :drawingml/table-style-flags (table-style-flags block))
+         (shape-hidden? block) (assoc :drawingml/hidden true))))))
 
 (defn chart-shape
   ([idx block] (chart-shape idx block {}))
@@ -1231,7 +1245,8 @@
                       (xfrm block opts))
          rel-id (assoc :drawingml/chart-rel-id rel-id)
          (:target-path rel) (assoc :drawingml/chart-part (:target-path rel))
-         (:workbook-path rel) (assoc :drawingml/workbook-part (:workbook-path rel)))))))
+         (:workbook-path rel) (assoc :drawingml/workbook-part (:workbook-path rel))
+         (shape-hidden? block) (assoc :drawingml/hidden true))))))
 
 (defn graphic-frame-shape
   ([idx block] (graphic-frame-shape idx block {}))
@@ -1297,7 +1312,8 @@
      (line-cap block) (assoc :drawingml/line-cap (line-cap block))
      (line-join block) (assoc :drawingml/line-join (line-join block))
      (shape-adjustments block) (assoc :drawingml/adjustments (shape-adjustments block))
-     (connector-connections block) (assoc :drawingml/connections (connector-connections block)))))
+     (connector-connections block) (assoc :drawingml/connections (connector-connections block))
+     (shape-hidden? block) (assoc :drawingml/hidden true))))
 
 (defn shapes
   ([xml] (shapes xml {}))
