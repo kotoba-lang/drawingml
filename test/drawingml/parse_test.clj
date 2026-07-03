@@ -484,6 +484,23 @@
       (is (= "ppt/slides/slide3.xml" (:drawingml/hyperlink-slide-part shape)))
       (is (not (contains? shape :drawingml/hyperlink))))))
 
+(deftest hyperlink-built-in-navigation-action-test
+  (testing "each built-in ppaction jump maps to its own keyword"
+    (doseq [[query kw] {"firstslide" :first-slide "lastslide" :last-slide "nextslide" :next-slide
+                        "previousslide" :previous-slide "lastslideviewed" :last-viewed-slide "endshow" :end-show}]
+      (let [action-sp (str "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r>"
+                           "<a:rPr><a:hlinkClick action=\"ppaction://hlinkshowjump?jump=" query "\"/></a:rPr>"
+                           "<a:t>Next</a:t></a:r></a:p></p:txBody></p:sp>")]
+        (is (= kw (dml/hyperlink-action action-sp)))
+        (is (= kw (:drawingml/hyperlink-action (dml/text-shape 0 action-sp)))))))
+  (testing "a plain r:id-based hlinkClick (external or slide-jump-via-relationship) has no :drawingml/hyperlink-action at all"
+    (is (nil? (dml/hyperlink-action hyperlinked-run-sp)))
+    (is (not (contains? (dml/text-shape 0 hyperlinked-run-sp
+                                       {:rels {"rId3" {:target-path "https://example.com/" :target-mode "External"}}})
+                        :drawingml/hyperlink-action))))
+  (testing "no hlinkClick at all -- nil"
+    (is (nil? (dml/hyperlink-action plain-run-sp)))))
+
 (def dashed-line-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:ln><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill><a:prstDash val=\"dash\"/></a:ln>

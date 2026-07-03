@@ -677,6 +677,34 @@
       (when (and rel (not= "External" (:target-mode rel)))
         (:target-path rel)))))
 
+(def ppaction-jumps
+  "PowerPoint's own built-in navigation actions
+  (ppaction://hlinkshowjump?jump=...) -- a hyperlink with NO relationship
+  at all (self-contained; unlike hyperlink-url/hyperlink-slide-part,
+  which resolve through a rel-id via opts' :rels)."
+  {"firstslide" :first-slide
+   "lastslide" :last-slide
+   "nextslide" :next-slide
+   "previousslide" :previous-slide
+   "lastslideviewed" :last-viewed-slide
+   "endshow" :end-show})
+
+(defn hyperlink-action
+  "A run's own built-in PowerPoint navigation action, from <a:hlinkClick
+  action=\"ppaction://hlinkshowjump?jump=...\"/> -- one of :first-slide/
+  :last-slide/:next-slide/:previous-slide/:last-viewed-slide/:end-show.
+  Previously entirely unhandled -- hyperlink-rel-id's own regex REQUIRES
+  r:id to be present, so an action-only hlinkClick (PowerPoint's built-in
+  Next/Previous/First/Last-slide navigation buttons, a common real-deck
+  pattern -- especially kiosk/training decks) was invisible to this
+  parser entirely, silently dropping the button's whole purpose. nil for
+  a plain hlinkClick with an r:id instead (the web-link/slide-jump-via-
+  relationship case, see hyperlink-url/hyperlink-slide-part) or no
+  hlinkClick at all."
+  [block]
+  (when-let [action (second (re-find #"<a:hlinkClick\b[^>]*\baction=\"([^\"]*)\"" (or (first-rpr-block block) "")))]
+    (get ppaction-jumps (second (re-find #"jump=(\w+)" action)))))
+
 (defn- paragraph-text
   "A single <a:p>'s own text: its runs concatenated with no separator (they
   are contiguous, differently-styled spans of the same line)."
@@ -1088,6 +1116,7 @@
          (baseline block) (assoc :drawingml/baseline (baseline block))
          (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
          (hyperlink-slide-part block opts) (assoc :drawingml/hyperlink-slide-part (hyperlink-slide-part block opts))
+         (hyperlink-action block) (assoc :drawingml/hyperlink-action (hyperlink-action block))
          (line-dash block) (assoc :drawingml/line-dash (line-dash block))
          (line-width block) (assoc :drawingml/line-width (line-width block))
          (line-cap block) (assoc :drawingml/line-cap (line-cap block))
