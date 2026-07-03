@@ -36,6 +36,7 @@ round-trip tested end to end.
 | Media | Image reference (`<p:pic>`'s own blip) | ✅ read+write | reference-metadata only (rel-id + part path), not raw bytes |
 | Media | Video/audio reference | ✅ read+write | reference-metadata only |
 | Media | Video/audio playback options (loop/rewind/volume) | ❌ not implemented | |
+| Media | Picture lock flags (`picLocks`: noChangeAspect/noMove/noResize/noRot) | ✅ read+write | fixed a real bug this session — the writer previously hardcoded `noChangeAspect="1"` regardless of the source picture's actual lock state |
 | Text | Paragraph align/level/margin-left/line-spacing | ✅ read+write | |
 | Text | Bullets: char/none/auto-numbered incl. `startAt` | ✅ read+write | |
 | Text | Tab stops (`tabLst`) | ✅ read+write | |
