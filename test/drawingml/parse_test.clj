@@ -258,7 +258,21 @@
                  "<a:lnTlToBr w=\"12700\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:lnTlToBr>"
                  "<a:lnBlToRt w=\"25400\"><a:solidFill><a:srgbClr val=\"445566\"/></a:solidFill></a:lnBlToRt>"
                  "</a:tcPr></a:tc>")
-            nil)))))
+            nil))))
+  (testing "a dashed cell border side captures :dash alongside width/color, same value set as shape-level line-dash"
+    (is (= {:left {:width 1.0 :color "112233" :dash :sysDash}}
+           (dml/table-cell-borders
+            (str "<a:tc><a:tcPr>"
+                 "<a:lnL w=\"12700\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill><a:prstDash val=\"sysDash\"/></a:lnL>"
+                 "</a:tcPr></a:tc>")
+            nil))))
+  (testing "no prstDash at all -- no :dash key, unchanged from before this feature existed"
+    (is (not (contains? (:left (dml/table-cell-borders
+                                 (str "<a:tc><a:tcPr>"
+                                      "<a:lnL w=\"12700\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill></a:lnL>"
+                                      "</a:tcPr></a:tc>")
+                                 nil))
+                          :dash)))))
 
 (deftest table-cell-margins-and-anchor-test
   (testing "margins (EMU -> inches) and vertical anchor are captured, only the attrs present"

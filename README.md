@@ -51,7 +51,7 @@ round-trip tested end to end.
 | Text | Hyperlink: internal same-deck slide jump | ✅ read+write | reference-metadata only (target slide's own part path); fixed a real bug this session where this case was misclassified/written as a broken external relationship |
 | Text | Hyperlink: built-in navigation action (`ppaction://...`) | ✅ read+write | Next/Previous/First/Last-slide/end-show — a self-contained hyperlink with no relationship at all |
 | Table | Cell text, merge (`gridSpan`/`rowSpan`/`hMerge`/`vMerge`), per-cell fill | ✅ read+write | |
-| Table | Cell borders (straight: L/R/T/B + diagonal: TL-BR/BL-TR) | ✅ read+write | |
+| Table | Cell borders (straight: L/R/T/B + diagonal: TL-BR/BL-TR) | ✅ read+write | each side's own `:dash` (`<a:prstDash>`, same value set as shape/connector line-dash) added this session — previously only width/color were captured, so a dashed cell border round-tripped as solid |
 | Table | Cell margins + vertical anchor | ✅ read+write | |
 | Table | Cell text rotation (`vert` on `<a:tcPr>`) | ✅ read+write | distinct attribute from `<a:bodyPr>`'s own `vert` (shape-level); shares the same value set/keyword mapping |
 | Table | Table style flags (firstRow/lastRow/firstCol/lastCol/bandRow/bandCol) | ✅ read+write | fixed a real bug this session — the writer previously hardcoded firstRow+bandRow regardless of source |

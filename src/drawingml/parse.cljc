@@ -964,8 +964,9 @@
   (when-let [ln-body (second (re-find (re-pattern (str "<a:" tag "\\b[^>]*>([\\s\\S]*?)</a:" tag ">")) (or tcPr-block "")))]
     (let [ln-open (or (re-find (re-pattern (str "<a:" tag "\\b[^>]*>")) tcPr-block) "")
           width (some-> (xml-attr ln-open "w") parse-double-safe (/ 12700.0))
-          color (first-color ln-body theme-colors)]
-      (not-empty (cond-> {} width (assoc :width width) color (assoc :color color))))))
+          color (first-color ln-body theme-colors)
+          dash (some-> (second (re-find #"<a:prstDash\b[^>]*\bval=\"([A-Za-z]+)\"" ln-body)) keyword)]
+      (not-empty (cond-> {} width (assoc :width width) color (assoc :color color) dash (assoc :dash dash))))))
 
 (defn table-cell-borders
   "A cell's own border sides (<a:tcPr>'s <a:lnL>/<a:lnR>/<a:lnT>/<a:lnB>,
@@ -973,12 +974,16 @@
   corner rule some real decks use to strike out or visually split a cell),
   each an <a:ln>-shaped element, as {:left {...} :right {...} :top {...}
   :bottom {...} :diagonal-down {...} :diagonal-up {...}} (each side
-  {:width pt :color hex}, only the sides actually present) or nil for a
-  cell with no border overrides at all (the common case -- PowerPoint's
-  own table-style default borders apply). Previously unread anywhere --
-  a table with per-cell border customization (e.g. a heavier top border
-  on a header row, a real-deck pattern) always round-tripped losing that
-  override entirely."
+  {:width pt :color hex :dash keyword}, only the sub-keys actually
+  present) or nil for a cell with no border overrides at all (the
+  common case -- PowerPoint's own table-style default borders apply).
+  :dash (from <a:prstDash val=\"...\">, same set as shape/connector
+  line-dash) was previously unread here despite being read at the
+  shape level -- a dashed cell border always round-tripped as solid.
+  Previously unread anywhere -- a table with per-cell border
+  customization (e.g. a heavier top border on a header row, a
+  real-deck pattern) always round-tripped losing that override
+  entirely."
   [cell-block theme-colors]
   (when-let [tcPr (second (re-find #"<a:tcPr\b[^>]*>([\s\S]*?)</a:tcPr>" (or cell-block "")))]
     (not-empty
