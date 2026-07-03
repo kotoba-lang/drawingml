@@ -731,6 +731,15 @@
     (let [recolored-fill-sp "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/><a:blipFill><a:blip r:embed=\"rId5\"><a:grayscl/></a:blip></a:blipFill></p:spPr></p:sp>"]
       (is (= {:grayscale? true} (:drawingml/recolor (dml/rect-shape 0 recolored-fill-sp)))))))
 
+(deftest picture-locks-test
+  (testing "only the flags actually set to \"1\" are captured"
+    (let [locked-pic-sp "<p:pic><p:nvPicPr><p:cNvPr id=\"3\" name=\"Picture\"/><p:cNvPicPr><a:picLocks noChangeAspect=\"1\" noMove=\"1\"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rId4\"/></p:blipFill><p:spPr></p:spPr></p:pic>"]
+      (is (= {:no-change-aspect? true :no-move? true} (dml/picture-locks locked-pic-sp)))
+      (is (= {:no-change-aspect? true :no-move? true} (:drawingml/locks (dml/pic-shape 0 locked-pic-sp))))))
+  (testing "an unlocked picture (no <a:picLocks> at all) -- nil, distinct from an always-locked assumption"
+    (is (nil? (dml/picture-locks image-pic-sp)))
+    (is (not (contains? (dml/pic-shape 0 image-pic-sp) :drawingml/locks)))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
