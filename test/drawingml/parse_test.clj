@@ -82,6 +82,18 @@
     (testing "a paragraph with no <a:pPr> at all carries no align/bullet/line-spacing keys"
       (is (= {:text "Default paragraph"} (nth paras 3))))))
 
+(deftest paragraph-tab-stops-test
+  (testing "each tab's position (EMU -> inches) and non-default alignment are captured, in document order"
+    (let [tabbed-sp
+          (str "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:pPr>"
+               "<a:tabLst><a:tab pos=\"914400\" algn=\"l\"/><a:tab pos=\"1828800\" algn=\"r\"/><a:tab pos=\"2743200\" algn=\"dec\"/></a:tabLst>"
+               "</a:pPr><a:r><a:t>Item\tValue\t1.5</a:t></a:r></a:p></p:txBody></p:sp>")
+          shape (dml/text-shape 0 tabbed-sp)]
+      (is (= [{:position 1.0} {:position 2.0 :align :right} {:position 3.0 :align :decimal}]
+             (:tab-stops (first (:drawingml/paragraphs shape)))))))
+  (testing "no <a:tabLst> at all -- no :tab-stops key, the overwhelming common case"
+    (is (not (contains? (first (:drawingml/paragraphs (dml/text-shape 0 bulleted-paragraphs-sp))) :tab-stops)))))
+
 (def nested-bullet-levels-sp
   "<p:sp><p:spPr></p:spPr>
    <p:txBody>
