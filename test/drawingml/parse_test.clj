@@ -489,6 +489,27 @@
       (is (not (contains? shape :drawingml/underline)))
       (is (not (contains? shape :drawingml/strikethrough))))))
 
+(def highlighted-and-tracked-run-sp
+  "<p:sp><p:spPr></p:spPr>
+   <p:txBody><a:p><a:r>
+     <a:rPr spc=\"150\"><a:highlight><a:srgbClr val=\"FFFF00\"/></a:highlight></a:rPr>
+     <a:t>Highlighted text</a:t></a:r></a:p></p:txBody>
+   </p:sp>")
+
+(deftest highlight-and-char-spacing-test
+  (testing "highlight color and character spacing are both read"
+    (let [shape (dml/text-shape 0 highlighted-and-tracked-run-sp)]
+      (is (= "FFFF00" (:drawingml/highlight shape)))
+      (is (= 1.5 (:drawingml/char-spacing shape)))))
+  (testing "neither key is added when the run has no such formatting"
+    (let [shape (dml/text-shape 0 plain-run-sp)]
+      (is (not (contains? shape :drawingml/highlight)))
+      (is (not (contains? shape :drawingml/char-spacing)))))
+  (testing "a schemeClr highlight resolves through theme-colors, same as any other schemeClr"
+    (let [shape (dml/text-shape 0 "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:rPr><a:highlight><a:schemeClr val=\"accent1\"/></a:highlight></a:rPr><a:t>x</a:t></a:r></a:p></p:txBody></p:sp>"
+                                {:theme-colors {:accent1 "4472C4"}})]
+      (is (= "4472C4" (:drawingml/highlight shape))))))
+
 (def hyperlinked-run-sp
   "<p:sp><p:spPr></p:spPr>
    <p:txBody><a:p><a:r>

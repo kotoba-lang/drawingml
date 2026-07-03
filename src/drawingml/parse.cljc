@@ -643,6 +643,23 @@
 (defn hyperlink-rel-id [block]
   (second (re-find #"<a:hlinkClick\b[^>]*\br:id=\"([^\"]*)\"" (or (first-rpr-block block) ""))))
 
+(defn char-spacing
+  "The run's character spacing (tracking) in points, converted from OOXML's
+  raw hundredths-of-a-point `spc` attribute. nil when absent (no explicit
+  tracking adjustment)."
+  [block]
+  (some-> (xml-attr (first-rpr block) "spc") parse-double-safe (/ 100.0)))
+
+(defn highlight-color
+  "The run's <a:highlight> color (a text-background highlight, distinct
+  from the shape's own fill/text color) -- scoped to the first run's own
+  <a:rPr>...</a:rPr> block since first-rpr's opening-tag-only match can't
+  see child elements. nil when absent (no highlight)."
+  ([block] (highlight-color block nil))
+  ([block theme-colors]
+   (when-let [hl (re-find #"<a:highlight\b[^>]*>[\s\S]*?</a:highlight>" (or (first-rpr-block block) ""))]
+     (first-color hl theme-colors))))
+
 (defn hyperlink-url
   "The run's hyperlink target URL, resolved through opts' :rels (the same
   slide-relationship map chart-shape already uses for chart-rel-id) --
@@ -1194,6 +1211,8 @@
          (underline? block) (assoc :drawingml/underline true)
          (strikethrough? block) (assoc :drawingml/strikethrough true)
          (baseline block) (assoc :drawingml/baseline (baseline block))
+         (char-spacing block) (assoc :drawingml/char-spacing (char-spacing block))
+         (highlight-color block (:theme-colors opts)) (assoc :drawingml/highlight (highlight-color block (:theme-colors opts)))
          (hyperlink-url block opts) (assoc :drawingml/hyperlink (hyperlink-url block opts))
          (hyperlink-slide-part block opts) (assoc :drawingml/hyperlink-slide-part (hyperlink-slide-part block opts))
          (hyperlink-action block) (assoc :drawingml/hyperlink-action (hyperlink-action block))
