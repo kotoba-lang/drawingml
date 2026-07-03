@@ -765,6 +765,21 @@
       (is (nil? (dml/shape-locks plain-sp)))
       (is (not (contains? (dml/rect-shape 0 plain-sp) :drawingml/locks))))))
 
+(deftest graphic-frame-locks-test
+  (testing "only the flags actually set to \"1\" are captured, wired into table-shape and chart-shape as :drawingml/locks"
+    (let [locked-table-block
+          (str "<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\" noResize=\"1\"/></p:cNvGraphicFramePr>"
+               "<a:tbl><a:tblPr/><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>")
+          locked-chart-block
+          (str "<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\" noResize=\"1\"/></p:cNvGraphicFramePr>"
+               "<c:chart r:id=\"rId3\"/>")]
+      (is (= {:no-grp? true :no-resize? true} (dml/graphic-frame-locks locked-table-block)))
+      (is (= {:no-grp? true :no-resize? true} (:drawingml/locks (dml/table-shape 0 locked-table-block))))
+      (is (= {:no-grp? true :no-resize? true} (:drawingml/locks (dml/chart-shape 0 locked-chart-block))))))
+  (testing "no <a:graphicFrameLocks> at all -- nil, no key added"
+    (is (nil? (dml/graphic-frame-locks table-block)))
+    (is (not (contains? (dml/table-shape 0 table-block) :drawingml/locks)))))
+
 (def picture-filled-rect-sp
   "<p:sp><p:spPr><a:prstGeom prst=\"rect\"/>
      <a:blipFill><a:blip r:embed=\"rId5\"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>
