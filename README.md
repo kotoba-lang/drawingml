@@ -50,6 +50,7 @@ round-trip tested end to end.
 | Table | Cell text, merge (`gridSpan`/`rowSpan`/`hMerge`/`vMerge`), per-cell fill | ✅ read+write | |
 | Table | Cell borders (straight: L/R/T/B + diagonal: TL-BR/BL-TR) | ✅ read+write | |
 | Table | Cell margins + vertical anchor | ✅ read+write | |
+| Table | Cell text rotation (`vert` on `<a:tcPr>`) | ✅ read+write | distinct attribute from `<a:bodyPr>`'s own `vert` (shape-level); shares the same value set/keyword mapping |
 | Table | Table style flags (firstRow/lastRow/firstCol/lastCol/bandRow/bandCol) | ✅ read+write | fixed a real bug this session — the writer previously hardcoded firstRow+bandRow regardless of source |
 | Table | Column widths / row heights (`gridCol`/`tr` dimensions) | ✅ read+write | nil when every column/row is the same size (this writer's own even-division default), so an unmodified table round-trips without a redundant dimension list |
 | Chart | Rel-id + chart part + embedded workbook part | ✅ read+write | reference-metadata only |
