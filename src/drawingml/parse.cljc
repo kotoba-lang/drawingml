@@ -1193,6 +1193,23 @@
   [block]
   (some-> (re-find #"<a:audioFile\b[^>]*\br:link=\"([^\"]*)\"" (or block "")) second))
 
+(defn picture-locks
+  "A picture's own <p:cNvPicPr><a:picLocks .../> flags (noChangeAspect/
+  noMove/noResize/noRot, each present in the source XML as attr=\"1\"), as
+  {:no-change-aspect? true ...} with only the flags actually set present.
+  Previously never read anywhere -- the writer unconditionally hardcodes
+  noChangeAspect=\"1\" regardless of the source picture's actual lock
+  state, so an UNLOCKED picture in the source always exports locked. nil
+  when the picture has no lock flags at all."
+  [block]
+  (when-let [locks-tag (re-find #"<a:picLocks\b[^>]*/?>" (or block ""))]
+    (not-empty
+     (cond-> {}
+       (= "1" (xml-attr locks-tag "noChangeAspect")) (assoc :no-change-aspect? true)
+       (= "1" (xml-attr locks-tag "noMove")) (assoc :no-move? true)
+       (= "1" (xml-attr locks-tag "noResize")) (assoc :no-resize? true)
+       (= "1" (xml-attr locks-tag "noRot")) (assoc :no-rot? true)))))
+
 (defn pic-shape
   ([idx block] (pic-shape idx block {}))
   ([idx block opts]
@@ -1214,6 +1231,7 @@
        (:target-path (get (:rels opts) audio-rel)) (assoc :drawingml/audio-part (:target-path (get (:rels opts) audio-rel)))
        (picture-crop block) (assoc :drawingml/crop (picture-crop block))
        (picture-recolor block) (assoc :drawingml/recolor (picture-recolor block))
+       (picture-locks block) (assoc :drawingml/locks (picture-locks block))
        (shape-hidden? block) (assoc :drawingml/hidden true)))))
 
 (defn table-style-flags
