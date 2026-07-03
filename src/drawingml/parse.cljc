@@ -845,6 +845,44 @@
        margin-left (assoc :margin-left margin-left)
        tab-stops (assoc :tab-stops tab-stops)))))
 
+(defn- non-uniform-dimensions
+  "`ds`, a seq of inch values, kept as a vector only when they're NOT all
+  equal (rounded to 1/10000 inch to absorb EMU->inch float noise) -- the
+  cue table-column-widths/table-row-heights share to decide whether a
+  captured dimension list is worth carrying at all. nil for an empty seq
+  or one where every value is the same, the common case (this writer's
+  own historical even-division output, and the overwhelming majority of
+  real hand-authored tables)."
+  [ds]
+  (when (and (seq ds) (> (count (distinct (map #(Math/round (* % 10000.0)) ds))) 1))
+    (vec ds)))
+
+(defn table-column-widths
+  "The table's own <a:tblGrid>'s <a:gridCol w=\"...\"> widths, in inches,
+  one per column in document order. nil when the table has no <a:tblGrid>
+  at all, or when every column is the same width (this writer's own
+  historical even-division output) -- the common case, so an unmodified
+  table round-trips without carrying a redundant width list. Previously
+  never read anywhere -- an imported table with deliberately uneven
+  column widths (a common real-deck pattern: a wide 'description' column
+  beside a narrow 'amount' column) always regenerated with even
+  division, silently losing that layout."
+  [block]
+  (when-let [grid (second (re-find #"<a:tblGrid\b[^>]*>([\s\S]*?)</a:tblGrid>" (or block "")))]
+    (non-uniform-dimensions
+     (map #(/ (parse-double-safe (second %)) emu-per-inch)
+          (re-seq #"<a:gridCol\b[^>]*\bw=\"([^\"]*)\"" grid)))))
+
+(defn table-row-heights
+  "The table's own <a:tr h=\"...\"> heights, in inches, one per row in
+  document order. nil when the table has no rows, or when every row is
+  the same height (this writer's own historical even-division output).
+  Same pattern and rationale as table-column-widths, its sibling."
+  [block]
+  (non-uniform-dimensions
+   (map #(/ (parse-double-safe (second %)) emu-per-inch)
+        (re-seq #"<a:tr\b[^>]*\bh=\"([^\"]*)\"" (or block "")))))
+
 (defn table-rows
   "The table's cell grid as rows of paragraph-aware cell text, reading <a:tr>
   then <a:tc> in document order. Empty when the block has no rows."
@@ -1333,6 +1371,8 @@
          (seq rows) (assoc :drawingml/rows rows)
          (table-non-uniform? cells) (assoc :drawingml/cells cells)
          (table-style-flags block) (assoc :drawingml/table-style-flags (table-style-flags block))
+         (table-column-widths block) (assoc :drawingml/column-widths (table-column-widths block))
+         (table-row-heights block) (assoc :drawingml/row-heights (table-row-heights block))
          (graphic-frame-locks block) (assoc :drawingml/locks (graphic-frame-locks block))
          (shape-hidden? block) (assoc :drawingml/hidden true))))))
 

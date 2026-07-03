@@ -145,6 +145,33 @@
       (is (= {:first-row? true :band-row? true} (:drawingml/table-style-flags (dml/table-shape 0 flagged-table-block))))
       (is (not (contains? (dml/table-shape 0 table-block) :drawingml/table-style-flags))))))
 
+(deftest table-column-row-dimensions-test
+  (testing "uneven <a:gridCol> widths / <a:tr> heights are captured, in inches"
+    (let [uneven-table-block
+          (str "<a:tbl><a:tblGrid><a:gridCol w=\"1828800\"/><a:gridCol w=\"914400\"/></a:tblGrid>"
+               "<a:tr h=\"457200\"><a:tc><a:txBody><a:p><a:r><a:t>Description</a:t></a:r></a:p></a:txBody></a:tc>"
+               "<a:tc><a:txBody><a:p><a:r><a:t>10</a:t></a:r></a:p></a:txBody></a:tc></a:tr>"
+               "<a:tr h=\"914400\"><a:tc><a:txBody><a:p><a:r><a:t>Q2</a:t></a:r></a:p></a:txBody></a:tc>"
+               "<a:tc><a:txBody><a:p><a:r><a:t>20</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>")]
+      (is (= [2.0 1.0] (dml/table-column-widths uneven-table-block)))
+      (is (= [0.5 1.0] (dml/table-row-heights uneven-table-block)))
+      (is (= [2.0 1.0] (:drawingml/column-widths (dml/table-shape 0 uneven-table-block))))
+      (is (= [0.5 1.0] (:drawingml/row-heights (dml/table-shape 0 uneven-table-block))))))
+  (testing "uniform widths/heights (this writer's own even-division output) -- nil, no key added"
+    (let [uniform-table-block
+          (str "<a:tbl><a:tblGrid><a:gridCol w=\"914400\"/><a:gridCol w=\"914400\"/></a:tblGrid>"
+               "<a:tr h=\"457200\"><a:tc><a:txBody><a:p><a:r><a:t>A</a:t></a:r></a:p></a:txBody></a:tc>"
+               "<a:tc><a:txBody><a:p><a:r><a:t>B</a:t></a:r></a:p></a:txBody></a:tc></a:tr>"
+               "<a:tr h=\"457200\"><a:tc><a:txBody><a:p><a:r><a:t>1</a:t></a:r></a:p></a:txBody></a:tc>"
+               "<a:tc><a:txBody><a:p><a:r><a:t>2</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>")]
+      (is (nil? (dml/table-column-widths uniform-table-block)))
+      (is (nil? (dml/table-row-heights uniform-table-block)))
+      (is (not (contains? (dml/table-shape 0 uniform-table-block) :drawingml/column-widths)))
+      (is (not (contains? (dml/table-shape 0 uniform-table-block) :drawingml/row-heights)))))
+  (testing "no <a:tblGrid>/no rows at all -- nil"
+    (is (nil? (dml/table-column-widths table-block)))
+    (is (not (contains? (dml/table-shape 0 table-block) :drawingml/column-widths)))))
+
 (def merged-header-table-block
   "A 2-column table whose header row is one gridSpan=2 cell (with its own
   fill) followed by its hMerge continuation cell, and a plain data row
