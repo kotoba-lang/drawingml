@@ -1294,6 +1294,26 @@
        (= "1" (xml-attr tblpr "bandRow")) (assoc :band-row? true)
        (= "1" (xml-attr tblpr "bandCol")) (assoc :band-col? true)))))
 
+(defn graphic-frame-locks
+  "A table/chart's own <p:cNvGraphicFramePr><a:graphicFrameLocks .../>
+  flags (noGrp/noDrilldown/noSelect/noChangeAspect/noMove/noResize, each
+  present in the source XML as attr=\"1\"), as {:no-grp? true ...} with
+  only the flags actually set present. Same pattern as shape-locks/
+  picture-locks, sibling element on a <p:graphicFrame> instead of a
+  <p:sp>/<p:pic>. Previously never read anywhere -- the writer
+  unconditionally hardcodes noGrp=\"1\" regardless of the source table/
+  chart's actual lock state. nil when there are no lock flags at all."
+  [block]
+  (when-let [locks-tag (re-find #"<a:graphicFrameLocks\b[^>]*/?>" (or block ""))]
+    (not-empty
+     (cond-> {}
+       (= "1" (xml-attr locks-tag "noGrp")) (assoc :no-grp? true)
+       (= "1" (xml-attr locks-tag "noDrilldown")) (assoc :no-drilldown? true)
+       (= "1" (xml-attr locks-tag "noSelect")) (assoc :no-select? true)
+       (= "1" (xml-attr locks-tag "noChangeAspect")) (assoc :no-change-aspect? true)
+       (= "1" (xml-attr locks-tag "noMove")) (assoc :no-move? true)
+       (= "1" (xml-attr locks-tag "noResize")) (assoc :no-resize? true)))))
+
 (defn table-shape
   ([idx block] (table-shape idx block {}))
   ([idx block opts]
@@ -1313,6 +1333,7 @@
          (seq rows) (assoc :drawingml/rows rows)
          (table-non-uniform? cells) (assoc :drawingml/cells cells)
          (table-style-flags block) (assoc :drawingml/table-style-flags (table-style-flags block))
+         (graphic-frame-locks block) (assoc :drawingml/locks (graphic-frame-locks block))
          (shape-hidden? block) (assoc :drawingml/hidden true))))))
 
 (defn chart-shape
@@ -1331,6 +1352,7 @@
          rel-id (assoc :drawingml/chart-rel-id rel-id)
          (:target-path rel) (assoc :drawingml/chart-part (:target-path rel))
          (:workbook-path rel) (assoc :drawingml/workbook-part (:workbook-path rel))
+         (graphic-frame-locks block) (assoc :drawingml/locks (graphic-frame-locks block))
          (shape-hidden? block) (assoc :drawingml/hidden true))))))
 
 (defn graphic-frame-shape
