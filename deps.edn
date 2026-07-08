@@ -20,4 +20,8 @@
                          "--test-ns-path" "test"
                          "--no-html"
                          "--text"
-                         "--fail-threshold" "75"]}}}
+                         "--fail-threshold" "75"]}
+  ;; clj-kondo as a Clojars lib (no Homebrew/system install needed).
+  :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
+         :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
+                     "--fail-level" "error"]}}}
