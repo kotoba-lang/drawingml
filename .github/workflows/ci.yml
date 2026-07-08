@@ -17,4 +17,5 @@ jobs:
         with:
           cli: latest
       - run: clojure -M:test
+      - run: clojure -M:lint
       - run: clojure -M:coverage
