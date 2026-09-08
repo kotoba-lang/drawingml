@@ -1,6 +1,6 @@
 (ns drawingml.parse
   "Small DrawingML XML to EDN projection helpers."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [xml.parse :as xp]))
 
 (def emu-per-inch 914400)
@@ -304,7 +304,7 @@
   bg/tx-alias translation applied."
   [xml]
   (some-> (second (re-find #"<a:schemeClr\b[^>]*\bval=\"([A-Za-z0-9]+)\"" (or xml "")))
-          str/lower-case
+          str/lower
           keyword))
 
 (defn scheme-color-role
@@ -328,7 +328,7 @@
   ([xml theme-colors]
    (or (some-> (or (second (re-find #"<a:srgbClr\b[^>]*\bval=\"([0-9A-Fa-f]{6})\"" (or xml "")))
                    (second (re-find #"\blastClr=\"([0-9A-Fa-f]{6})\"" (or xml ""))))
-               str/upper-case)
+               str/upper)
        (let [role (raw-scheme-color-role xml)]
          (or (get theme-colors role)
              (get theme-colors (get default-color-map role role)))))))
