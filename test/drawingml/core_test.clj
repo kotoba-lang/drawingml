@@ -1,5 +1,5 @@
 (ns drawingml.core-test
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
             [drawingml.core :as dml]
             [drawingml.parse :as parse]))

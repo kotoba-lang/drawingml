@@ -1,6 +1,6 @@
 (ns drawingml.core
   "EDN-first DrawingML XML builders."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def ns-a "http://schemas.openxmlformats.org/drawingml/2006/main")
 (def emu-per-px 9525)
@@ -48,7 +48,7 @@
        (el :a:ext {:cx (emu (or cx 0)) :cy (emu (or cy 0))} [])]))
 
 (defn srgb [hex]
-  (el :a:srgbClr {:val (str/upper-case (str/replace (str hex) #"^#" ""))} []))
+  (el :a:srgbClr {:val (str/upper (str/replace (str hex) #"^#" ""))} []))
 
 (defn solid-fill [hex]
   (el :a:solidFill {} [(srgb hex)]))
