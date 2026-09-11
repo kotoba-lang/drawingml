@@ -70,5 +70,5 @@ round-trip tested end to end.
 ## Test
 
 ```bash
-clojure -M:test
+kbb -M:test
 ```
