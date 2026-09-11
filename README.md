@@ -8,7 +8,7 @@ lives in `kotoba-lang/presentationml`.
 
 ## Coverage matrix
 
-This repo is the DrawingML *reader* (`src/drawingml/parse.cljc`) — one
+This repo is the DrawingML *reader* (`src/drawingml/parse.cljk`) — one
 element/effect at a time, string-matched against real `<p:sp>`/`<p:pic>`/
 `<p:graphicFrame>`/`<p:cxnSp>` XML, no schema-driven codegen. The matching
 *writer* for each row lives in `kotoba-lang/slides` (see that repo's own
