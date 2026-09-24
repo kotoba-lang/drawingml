@@ -1,6 +1,6 @@
 (ns drawingml.core-test
   (:require [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is]]
+            [kotoba.test :refer [deftest is]]
             [drawingml.core :as dml]
             [drawingml.parse :as parse]))
 
